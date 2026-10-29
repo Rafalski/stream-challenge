@@ -59,7 +59,7 @@ Wait for the corresponding `record_archived` log before expecting a file. The fi
 
 ## Log display
 
-Console logs use blue `INFO`, yellow `STEP`, green `OK`, magenta `WARN` and red `ERROR` entries, with coloured level badges. Archived records use cyan text to distinguish them from published records. The labels are presentation only; JSON retains standard logging levels.
+Console logs use blue `INFO`, yellow `STEP`, green `OK`, magenta `WARN` and red `ERROR` entries, with coloured level badges. Both published and archived success messages are green. Coloured message text has an explicit black background so it remains readable in light log viewers. The labels are presentation only; JSON retains standard logging levels.
 
 Docker enables console colours explicitly so they appear in `docker compose logs`. Native Python detects an interactive terminal. Set `LOG_COLOUR=never` for plain text, or select colour-free JSON for automation:
 

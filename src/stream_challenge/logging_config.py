@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 
 
 RESET = "\033[0m"
-CYAN = "\033[96m"
 COLOURS = {
     # Each entry gives the message colour and a contrasting level badge.
     "INFO": ("\033[94m", "\033[44;97m"),
@@ -67,13 +66,11 @@ class ConsoleFormatter(logging.Formatter):
         message = f"[{record.name}] {event}" + (f" {details}" if details else "")
         badge = f"[{label:^5}]"
 
-        # Colour only the badge background, so long lines stay easy to read.
+        # Don't inherit a light viewer background behind bright message text.
         if self.colour:
             foreground, background = COLOURS[label]
-            if event == "record_archived" and record.levelno < logging.WARNING:
-                foreground = CYAN
             badge = f"{background}{badge}{RESET}"
-            message = f"{foreground}{message}{RESET}"
+            message = f"\033[40m{foreground}{message}{RESET}"
 
         return f"[{timestamp}] {badge} {message}"
 
