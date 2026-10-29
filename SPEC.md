@@ -1,6 +1,6 @@
 # Specification
 
-Baseline agreed and milestone 1 authorised on 29 October 2026. This file defines the required outcome. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records choices and open decisions. Local Kafka infrastructure is implemented; the streaming application is not yet implemented.
+Baseline agreed on 29 October 2026. Milestone 1 is reviewed; milestone 2 is implemented for review. This file defines the required outcome. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records choices and open decisions. Kafka, event generation and raw archival are available; Flink aggregation is not yet implemented.
 
 ## Scope
 
@@ -92,4 +92,4 @@ The engineer reviews decisions and owns Git history. No agent commits, pushes, P
 
 Demonstrate generation, Kafka publication, unchanged raw archival, correct postcode/window/count records, separate aggregate files and documented error behaviour. Run the relevant tests and verify the README walkthrough. The engineer handles public publication; its requirement does not authorise agent pushes or repository visibility changes.
 
-API choice, versions, storage formats, aggregate schema, validation limits, watermark/late-event policy, checkpointing and delivery guarantees remain open in the engineering guide. Those choices must not be treated as additional requirements from the brief.
+PyFlink API/versions, aggregate format/schema, further validation limits, watermark/late-event policy and Flink checkpointing remain open in the engineering guide. The raw format and producer/consumer offset policies are now recorded there. Those choices must not be treated as additional requirements from the brief.

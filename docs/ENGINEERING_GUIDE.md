@@ -1,6 +1,6 @@
 # Engineering guide
 
-This is the central guide to design choices and AI-assisted development. The specification and local route are agreed. Milestone 1 Kafka infrastructure is implemented and verified; the diagram below shows the intended full pipeline. Application choices remain open where identified.
+This is the central guide to design choices and AI-assisted development. The specification and local route are agreed. Kafka, the producer and raw ingester are implemented; Flink aggregation is still proposed. The diagram shows the intended full pipeline.
 
 ## Architecture
 
@@ -27,25 +27,40 @@ Local execution is the initial deliverable. Keep processing independent of deplo
 
 Implemented in `compose.yaml`: one combined KRaft broker/controller using `apache/kafka:4.3.2`, a persistent named data volume and a one-shot initializer for `pageviews`. Automatic topic creation is disabled. The topic has one partition, replication factor 1, one-day/256 MiB segment retention, 16 MiB segments and an hourly roll interval. Retention is enforced during segment cleanup, not as a strict disk cap. Broker heap is limited to 512 MiB; this is not a container memory limit. Docker logs rotate at 10 MiB with three files.
 
-Separate advertised listeners support host clients (`localhost:9092`) and future Compose services (`kafka:29092`). Only the host listener is published, restricted to loopback. Plaintext and replication factor 1 suit this local exercise, with no authentication or broker redundancy claimed. The fixed cluster ID is a non-secret local identifier.
+Separate advertised listeners support host clients (`127.0.0.1:9092`) and Compose services (`kafka:29092`). Only the host listener is published, restricted to loopback. The explicit IPv4 address fixes native Python failures when Windows resolves `localhost` to IPv6. Plaintext and replication factor 1 suit this local exercise, with no authentication or broker redundancy claimed. The fixed cluster ID is a non-secret local identifier.
 
-The patched Kafka 4.3.2 JVM image is pinned instead of `latest`; [Apache's release list](https://kafka.apache.org/community/downloads/) and [versioned Docker example](https://github.com/apache/kafka/blob/4.3.2/docker/examples/docker-compose-files/single-node/plaintext/docker-compose.yml) informed the choice. Kafka documents [client/broker compatibility](https://kafka.apache.org/41/getting-started/compatibility/); this is a basis for later version selection, not a verified Flink integration. Select and test the Python/Flink/JVM/connector combination in milestone 3. No Flink services or Python dependencies are installed yet.
+The patched Kafka 4.3.2 JVM image is pinned instead of `latest`; [Apache's release list](https://kafka.apache.org/community/downloads/) and [versioned Docker example](https://github.com/apache/kafka/blob/4.3.2/docker/examples/docker-compose-files/single-node/plaintext/docker-compose.yml) informed the choice. Kafka documents [client/broker compatibility](https://kafka.apache.org/41/getting-started/compatibility/); this is a basis for later version selection, not a verified Flink integration. Select and test the Python/Flink/JVM/connector combination in milestone 3. No Flink services are installed yet.
 
-Verified on 29 October 2026 using Docker Engine 29.9.2 and Compose 5.6.0 on Windows: startup/readiness, repeat initialization, topic configuration, a synthetic record round trip, host TCP connectivity, host-listener API discovery, persistence across container recreation, shutdown and empty-volume reset. The repeatable smoke check in `tests/integration/kafka-smoke-test.sh` runs inside Docker and cleans up its own topic. Python unit tests will run locally when Python logic is introduced. Native host Python Kafka-client interoperability remains to be tested in milestone 2.
+Milestone 1 verified startup/readiness, initialization, broker round trips, persistence and reset on Windows using Docker Engine 29.9.2 and Compose 5.6.0. The independent broker smoke check remains in `tests/integration/kafka-smoke-test.sh`.
+
+## Producer and raw ingestion
+
+The engineer selected per-record files for the local exercise. `archive.py` stores value bytes at `<root>/<topic>/<partition>/<offset>.bin`, with separate empty `.null` markers for null values. This keeps inspection and byte fidelity simple, including malformed records, at the cost of many small files. Batched archives would need framing and more recovery logic; revisit that choice before sustained production use rather than building it speculatively.
+
+Each file is written to a temporary path, flushed and fsynced, then atomically renamed before a synchronous Kafka offset commit. Auto-commit and automatic offset storage are disabled. A failure after writing but before committing can replay the record; matching files are reused and conflicting contents fail without overwriting evidence. This is at-least-once consumption with file reuse, not a transaction across Kafka and storage. Parent-directory durability, power loss and concurrent writers to the same archive root are not guaranteed or tested. A hard stop may leave ignored `.tmp` files.
+
+Keep an archive root tied to one topic generation and use one consumer group for its writers. Recreating Kafka can reuse offsets, so use a new archive root after a broker reset. Removing files while retaining committed offsets requires a new group/replay of retained Kafka data to rebuild the archive.
+
+The producer uses broker acknowledgements and idempotent publishing, waiting for delivery reports record by record. This is deliberately straightforward at the expected volume; it trades throughput for simple failure reporting. A timeout or interruption can leave delivery uncertain, so repeating a command is not guaranteed to avoid duplicate business events. Fixed or seeded random intervals and continuous mode are demo controls. The interval is added between acknowledged sends, not a guaranteed event rate.
+
+Python 3.11, `confluent-kafka==2.16.1` and `pytest==9.2.0` are used for this milestone. The client provides native Windows/Linux wheels and ordinary Kafka access without a Confluent service. [Client documentation](https://docs.confluent.io/kafka-clients/python/current/overview.html) describes delivery callbacks and offset management; the [API reference](https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html) distinguishes synchronous commits. Dependencies are pinned in `pyproject.toml`; the container uses Python 3.11.18 and runs as a non-root user. The host virtual environment uses the already-installed Python 3.11.2.
+
+Application logs use Python's standard logging module with a readable coloured console formatter and a selectable JSON formatter. Console level badges have contrasting backgrounds; success and lifecycle display labels do not introduce custom logging severities. `LOG_FORMAT=json` removes ANSI codes for automation, and `LOG_COLOUR` controls console colour detection. No extra logging dependency is needed. The [README](../README.md#log-display) documents the palette and settings.
+
+Core unit tests run locally without Docker. Three Kafka integration checks exercise the real Python commands, byte fidelity (including null/empty/repeated values) and retry after a filesystem failure. A Docker demo verified host-visible archive files and variable pacing; continuous production was manually stopped with Ctrl+C. The producer checks required field types; it does not introduce postcode/URL normalisation or further business validation. Raw ingestion deliberately does not parse or reject payloads. Flink DQ handling and broad crash/recovery evidence remain for later milestones.
 
 ## Technical decisions
 
-Application entries below remain open. The Kafka foundation is recorded above; record further choices and evidence as agreed. Specific watermark delays, idle timeouts and checkpoint intervals are intentionally unset.
+Selected producer/archive choices are recorded above; the remaining application decisions below stay open. Specific watermark delays, idle timeouts and checkpoint intervals are intentionally unset.
 
 | Decision | Alternatives and recommendation for review |
 | --- | --- |
 | PyFlink API and versions | Table/SQL makes grouping concise; DataStream provides explicit validation and late-event control. Evaluate which meets the agreed policies with the least code. Check a compatible released Python/JVM/Flink/Kafka/connector set before pinning versions. |
-| Raw ingestion and format | A small independent Python consumer is a candidate. Compare per-record files with framed segments. Per-record files are simple but numerous; segments need framing and recovery logic. Plain JSONL cannot preserve arbitrary multiline or malformed payloads safely. Keep original bytes separate from storage metadata. |
 | Aggregate sink and schema | Prefer a built-in Flink file sink over custom append/recovery logic. JSONL is easy to inspect; CSV and Parquet are alternatives. The required content is postcode, window datetime and count. Proposed fields are `postcode`, `window_start`, `window_end` and `pageview_count`. Agree whether datetime is represented as UTC text or epoch seconds, whether both boundaries are useful, and how files roll and become committed. These are derived output fields, not source fields. |
 | Event-time policy | Propose UTC minute boundaries, start inclusive and end exclusive. Agree disorder tolerance, idle-input handling and whether late records are dropped with diagnostics or update earlier results. Corrections complicate append-only output. A quiet stream may not advance event time enough to close its last window. |
-| Checkpoints and delivery | Review checkpoint storage/interval, producer acknowledgement/retry settings, raw write/offset ordering and restart limits. Durable raw writes before offset commits can still replay after failure. Do not promise pipeline-wide exactly once. |
+| Flink checkpoints and delivery | Review checkpoint storage/interval, sink commit behaviour and restart limits. Producer acknowledgements and raw write/offset ordering are recorded above. Do not promise pipeline-wide exactly once. |
 | Validation | Enforce required types without treating booleans as integers. Agree extra fields, empty values, numeric/timestamp ranges, malformed records and diagnostics. Accept the supplied partial postcode and scheme-less webpage. Full postcode validation, scheme requirements and non-negative limits are not stated requirements. |
-| Remaining local setup | Kafka uses one broker/partition and a verified persistent Docker volume. Flink parallelism 1 is a candidate. Agree raw/aggregate/checkpoint mounts, retention and resource budgets with their milestones; host output permissions still need verification. |
+| Remaining local setup | Kafka has one broker/partition and a persistent Docker volume; raw files use a verified host bind mount. Flink parallelism 1 is a candidate. Agree aggregate/checkpoint mounts, archive retention and resource budgets with their milestones. |
 | Test completion and CI | Compare bounded Kafka inputs with observable continuous-job completion. Use the same processing logic as the real application. Bounded tests alone do not establish continuous or idle-stream behaviour. Agree readiness, deadlines, watermark observations and runner limits. |
 
 ## Correctness and testing
@@ -80,7 +95,7 @@ Start from the requirement and acceptance criteria. AI can research alternatives
 6. Update documentation and report evidence, limitations and unresolved issues. Keep proposed production improvements distinct from local capabilities.
 7. The engineer reviews and commits. AI must not commit, push, create/merge PRs or manufacture history.
 
-Use clear comments and accurate explanations. Do not disguise AI assistance or introduce deliberate mistakes. Milestone 1 showed that Compose startup alone does not establish completion of a one-shot initializer; the README separately waits for its exit status. Record further lessons with supporting evidence as milestones finish.
+Use clear comments and accurate explanations. Do not disguise AI assistance or introduce deliberate mistakes. Milestone 1 showed why the README must separately wait for initializer completion. Milestone 2 exposed IPv6 resolution failures in native Windows clients and showed that shutdown must include application profiles. The README now uses an explicit IPv4 address and enables all profiles for shutdown. Record further lessons with supporting evidence as milestones finish.
 
 ## Observability and production considerations
 

@@ -8,11 +8,11 @@
 
 ## Code and verification
 
-- Use straightforward, idiomatic Python, small functions, concise descriptive names and useful type hints. Comments explain why. Avoid unnecessary dependencies, abstractions, class hierarchies and repetitive docstrings.
+- Use straightforward, idiomatic Python, small functions, concise descriptive names and useful type hints. Add short purpose docstrings and friendly comments for meaningful logical blocks, with blank lines between sections. Avoid unnecessary dependencies, abstractions, class hierarchies and repetitive explanations.
 - Preserve the four event fields and original Kafka payloads. Do not silently normalise, enrich or coerce values.
 - Use pytest and pragmatic TDD for validation and processing. Cover invalid/missing values, timestamp units and window boundaries.
 - Test real Kafka, Flink and file output through isolated scenarios with explicit expected results, bounded observable waits, useful reports and cleanup. Do not duplicate aggregation in tests or rely on arbitrary sleeps.
-- Use structured logs and explicit error handling. Review generated changes, failure paths and evidence for reliability claims.
+- Use readable coloured console logs for local Python demos, with selectable JSON for automation. Keep payloads out of logs and ANSI codes out of JSON. Use explicit error handling and review failure paths and reliability claims.
 
 ## Documentation and confidentiality
 
