@@ -1,6 +1,6 @@
 # Specification
 
-Draft for review. This file defines the required outcome. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records agreed technology choices, proposals and open decisions. Nothing is implemented yet.
+Baseline agreed and milestone 1 authorised on 29 October 2026. This file defines the required outcome. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records choices and open decisions. Local Kafka infrastructure is implemented; the streaming application is not yet implemented.
 
 ## Scope
 
@@ -52,7 +52,7 @@ Extra-field handling, blank strings, identifier ranges, timestamp bounds and lat
 
 ## Requirements and verification
 
-The table is the requirements traceability matrix. Origin distinguishes exercise requirements from our project additions; components reflect our selected implementation. All checks are planned.
+The table is the requirements traceability matrix. Origin distinguishes exercise requirements from our project additions; components reflect our selected implementation. Milestone verification is recorded in the roadmap and guide. Kafka smoke checks do not establish application correctness.
 
 | ID | Requirement | Origin | Component | Verification |
 | --- | --- | --- | --- | --- |

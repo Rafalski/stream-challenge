@@ -2,7 +2,7 @@
 
 ## Scope and workflow
 
-- Read SPEC.md and ROADMAP.md before changes; consult docs/ENGINEERING_GUIDE.md for decisions. Only documentation is authorised until the engineer approves implementation.
+- Read SPEC.md and ROADMAP.md before changes; consult docs/ENGINEERING_GUIDE.md for decisions. Implement only the milestone authorised by the engineer.
 - Work in small, reviewable increments within the current milestone. Present unresolved choices for review and record agreed decisions.
 - Verify the milestone and obtain engineer review before starting the next. Keep requirements, roadmap and documentation aligned with actual behaviour.
 
