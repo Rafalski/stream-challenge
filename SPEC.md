@@ -73,16 +73,19 @@ The table is the requirements traceability matrix. Origin distinguishes exercise
 | R15 | Supply source through a publicly accessible GitHub repository and keep it public-safe | Brief for public access; project for confidentiality rules | Repository; publication by engineer | Content review and engineer verification of public source availability |
 | R16 | Explain design choices; record alternatives, AI workflow and separate production considerations | Brief for rationale; project for supporting guides | Engineering guide and agent rules | Engineer review against scope |
 | R17 | Check aggregate quality and independently reconcile known input/output counts | Project | End-to-end validation | Per-postcode/window and total comparisons, with invalids, late exclusions and replay accounted for |
+| R18 | Provide default-enabled local run-duration, archive-budget and free-space safeguards, with explicit overrides/opt-out and no automatic data deletion | Project | Producer and raw ingester | Focused boundary checks; real Kafka verification that a blocked write does not advance its offset |
 | O1 | Optional monitoring and alerting, using Prometheus/Grafana if selected | Brief bonus; tools chosen by project | Existing integrations and dashboards | Verify available throughput, invalid-event, output, lag, health, error, checkpoint/recovery and agreed alert signals |
 | O2 | Deferred optional Agent Forge incident investigation | Project | Isolated fault-injection demonstration | Healthy baseline, independent detection, evidence, proposed fix/regression test and human approval gate |
 
-R1-R17 are required for our proposed project scope, with their origins shown above. O1 and O2 do not block the core demonstration. The brief also lists security, automation and diagrams as optional enhancements. We have chosen CI automation and Mermaid diagrams as project deliverables; further security hardening and alerting remain optional. Confidentiality and secret exclusion always apply.
+R1-R18 are required for our proposed project scope, with their origins shown above. R18 is optional at execution time through an explicit opt-out, enabled by default. O1 and O2 do not block the core demonstration. The brief also lists security, automation and diagrams as optional enhancements. We have chosen CI automation and Mermaid diagrams as project deliverables; further security hardening and alerting remain optional. Confidentiality and secret exclusion always apply.
 
 ## Delivery constraints
 
 Use Python, Kafka, PyFlink, Docker Compose and local filesystem storage. Raw ingestion and aggregation have independent responsibilities. Prefer direct aggregate output from Flink; add another Kafka topic only with a clear reason. AWS, Kinesis and Terraform are outside the chosen implementation.
 
 Keep dependencies and code simple. Test the actual streaming behaviour rather than duplicating aggregation inside tests. Use observable conditions with bounded deadlines instead of arbitrary sleeps. Make recovery and delivery claims only where supported by evidence.
+
+The per-record archive is for bounded local demonstrations. Default safety budgets are lower than a full day at the assumed upper volume; sustained daily-volume capability has not been verified. Before extended-volume or production use, agree and verify rolled byte-preserving storage, retention and recovery. Local simplicity must not hide a known unbounded-growth problem or imply that cloud deployment removes it.
 
 Document in concise British English using Markdown and Mermaid. Keep source data unchanged and use generic terminology. Exclude company identities, recruitment context, original assessment material, proprietary information, personal data and credentials.
 

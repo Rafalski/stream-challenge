@@ -10,6 +10,7 @@ from confluent_kafka import Consumer, Producer, TopicPartition, OFFSET_INVALID
 from confluent_kafka.admin import AdminClient, NewTopic
 
 from stream_challenge.ingest import consume_records
+from stream_challenge.archive import ArchiveGuard
 
 
 pytestmark = pytest.mark.integration
@@ -114,3 +115,17 @@ def test_write_failure_leaves_offset_available_for_retry(kafka_topic, tmp_path):
     finally:
         retry.close()
     assert (tmp_path / "retry" / kafka_topic.topic / "0" / "0.bin").read_bytes() == b"original"
+
+
+def test_archive_limit_does_not_commit_the_blocked_record(kafka_topic, tmp_path):
+    publish_payloads(kafka_topic.topic, [b"first", b"second"])
+    consumer = new_consumer(kafka_topic)
+    guard = ArchiveGuard(tmp_path, max_files=1, min_free_bytes=0)
+    try:
+        with pytest.raises(RuntimeError, match="archive_file_limit"):
+            consume_records(consumer, kafka_topic.topic, tmp_path, 2, 15, guard=guard)
+        assert consumer.committed([TopicPartition(kafka_topic.topic, 0)], timeout=5)[0].offset == 1
+    finally:
+        consumer.close()
+    assert (tmp_path / kafka_topic.topic / "0" / "0.bin").read_bytes() == b"first"
+    assert not (tmp_path / kafka_topic.topic / "0" / "1.bin").exists()

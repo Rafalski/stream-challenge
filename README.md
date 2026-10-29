@@ -46,7 +46,7 @@ docker compose run --rm producer --continuous --interval 0.1
 docker compose run --rm producer --continuous --interval-range 0.2 1.5 --seed 42
 ```
 
-Run one producer at a time and use Ctrl+C to stop continuous production. The range gives variable pauses between acknowledged sends; the actual rate also includes broker latency. The seed repeats the chosen delays, not wall-clock timestamps or exact arrival times. Use `--count N` for a finite run or `--interval 0` for no deliberate delay. `--start-timestamp 1611662684` gives deterministic event timestamps, advancing by one second per record.
+Run one producer at a time and use Ctrl+C to stop continuous production early. By default it stops starting new sends after 15 minutes. The range gives variable pauses between acknowledged sends; the actual rate also includes broker latency. The seed repeats the chosen delays, not wall-clock timestamps or exact arrival times. Use `--count N` for a finite run or `--interval 0` for no deliberate delay. `--start-timestamp 1611662684` gives deterministic event timestamps, advancing by one second per record.
 
 To inspect raw files from PowerShell:
 
@@ -56,6 +56,30 @@ Get-Content data/raw/pageviews/0/0.bin
 ```
 
 Wait for the corresponding `record_archived` log before expecting a file. The first event in a fresh topic is offset 0. Flink aggregate files are not available yet.
+
+## Local run safeguards
+
+Three lightweight safeguards are enabled by default and can be overridden or disabled explicitly:
+
+| Safeguard | Default | Options |
+| --- | --- | --- |
+| Publishing duration | 900 seconds, including continuous mode | Producer `--max-duration SECONDS` |
+| Archive budget | 10,000 files or 100 MiB of logical file contents, including existing files in the output directory | Ingester `--max-archive-files N`, `--max-archive-mib N` |
+| Free-space reserve | 1 GiB on the archive filesystem, checked at startup and about every five seconds | Ingester `--min-free-mib N` |
+
+The ingester warns once per signal at 80% of a file/byte budget, or below twice the free-space reserve. It fails before a write that would exceed a budget, or when a free-space check reports less than the reserve. The blocked record's offset is not committed. Existing files are never deleted or automatically compressed. Producer duration limits finish the current delivery attempt, which can take up to another ten seconds. Reaching the duration limit normally completes continuous mode; a finite run that cannot deliver its requested count exits unsuccessfully.
+
+For example, run a busier stream for one minute:
+
+```text
+docker compose run --rm producer --continuous --interval 0.1 --max-duration 60
+```
+
+Pass `--no-safeguards` to the relevant producer or ingester command to opt out; this logs a warning. On the producer it disables only the duration limit, not `--count`. On the ingester it disables both archive budgets and free-space checks. Use one active writer per archive directory. To run an ingester with custom flags, stop the background ingester first and use `docker compose run --rm raw-ingester` with those flags.
+
+These are local checks, not distributed quotas: file counters include the startup scan plus this writer's changes, byte totals exclude filesystem metadata, and free-space checks are periodic. They cover the raw archive, not all Docker storage or future aggregate output. The Docker bind-mount and host free-space readings matched in this Windows environment; that has not been verified on other platforms.
+
+If a limit stops the ingester, the producer and Kafka keep running independently. Stop the producer and review the error rather than treating the run as complete. Kafka can retain the blocked records only within its configured retention policy. Retention and byte-preserving rolled batches must be designed and tested before sustained-volume or production use; these guardrails do not make one file per event a production archive design.
 
 ## Log display
 
@@ -95,13 +119,13 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The default run covers core unit tests without Docker. With Kafka running, run the three integration checks locally:
+The default run covers core unit tests without Docker. With Kafka running, run the integration checks locally:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -m integration
 ```
 
-These create isolated topics, groups and temporary directories. They exercise the real producer/ingester commands, preserve malformed/empty/null/repeated values and verify that a failed write leaves its offset available for retry. This is not yet an end-to-end aggregation test suite.
+These create isolated topics, groups and temporary directories. They exercise the real producer/ingester commands, preserve malformed/empty/null/repeated values and verify that a failed write or archive limit leaves its offset available for retry. This is not yet an end-to-end aggregation test suite.
 
 ## Stop or reset
 

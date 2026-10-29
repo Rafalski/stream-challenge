@@ -24,21 +24,32 @@ def publish_events(
     timeout: float = 10,
     interval_range: tuple[float, float] = (0, 0),
     seed: int | None = None,
+    max_duration: float | None = 900,
 ) -> int:
     """Publish events and count only successful broker acknowledgements."""
     minimum, maximum = interval_range
     if not all(math.isfinite(value) for value in interval_range) or not 0 <= minimum <= maximum:
         raise ValueError("intervals must be finite and satisfy 0 <= minimum <= maximum")
+    if max_duration is not None and (not math.isfinite(max_duration) or max_duration <= 0):
+        raise ValueError("max_duration must be finite and positive")
 
     rng = random.Random(seed)
     count = 0
+    deadline = None if max_duration is None else time.monotonic() + max_duration
 
     for event in events:
-        # Prepare the event, then apply any demo pacing between sends.
-        payload = serialize_event(event)
+        # Keep demo pacing within the run budget, including long pauses.
         if count and maximum:
-            time.sleep(rng.uniform(minimum, maximum))
+            delay = rng.uniform(minimum, maximum)
+            if deadline is not None:
+                delay = min(delay, max(0, deadline - time.monotonic()))
+            time.sleep(delay)
+        if deadline is not None and time.monotonic() >= deadline:
+            logger.warning("production_duration_limit", extra={"details": {"seconds": max_duration, "count": count}})
+            break
 
+        # Prepare the event only when we're still allowed to send it.
+        payload = serialize_event(event)
         delivery = []
 
         def delivered(error, message):
@@ -71,7 +82,7 @@ def main() -> int:
 
     volume = parser.add_mutually_exclusive_group()
     volume.add_argument("--count", type=int, default=10)
-    volume.add_argument("--continuous", action="store_true", help="Keep publishing until stopped.")
+    volume.add_argument("--continuous", action="store_true", help="Publish until stopped or the duration limit is reached.")
     parser.add_argument("--start-timestamp", type=int, help="Use this epoch second, advancing one second per event.")
 
     # Fixed pacing and random pacing are alternatives, not cumulative delays.
@@ -79,6 +90,8 @@ def main() -> int:
     pacing.add_argument("--interval", type=float, default=1, help="Seconds between events (default: 1).")
     pacing.add_argument("--interval-range", type=float, nargs=2, metavar=("MIN", "MAX"), help="Random seconds between events.")
     parser.add_argument("--seed", type=int, help="Make random pacing repeatable.")
+    parser.add_argument("--max-duration", type=float, default=900, help="Publishing duration in seconds (default: 900).")
+    parser.add_argument("--no-safeguards", action="store_true", help="Disable the publishing duration limit.")
 
     args = parser.parse_args()
     if args.count < 1:
@@ -86,6 +99,8 @@ def main() -> int:
     intervals = tuple(args.interval_range) if args.interval_range else (args.interval, args.interval)
     if not all(math.isfinite(value) for value in intervals) or not 0 <= intervals[0] <= intervals[1]:
         parser.error("intervals must be finite and satisfy 0 <= minimum <= maximum")
+    if not math.isfinite(args.max_duration) or args.max_duration <= 0:
+        parser.error("--max-duration must be finite and positive")
 
     configure_logging()
     try:
@@ -103,8 +118,16 @@ def main() -> int:
 
         event_count = None if args.continuous else args.count
         events = generate_events(event_count, args.start_timestamp)
-        logger.info("production_started", extra={"details": {"topic": args.topic, "count": event_count}})
-        count = publish_events(producer, args.topic, events, interval_range=intervals, seed=args.seed)
+        duration = None if args.no_safeguards else args.max_duration
+        if args.no_safeguards:
+            logger.warning("safeguards_disabled", extra={"details": {"scope": "producer"}})
+        logger.info("production_started", extra={"details": {
+            "topic": args.topic, "count": event_count, "max_duration": duration,
+        }})
+        count = publish_events(producer, args.topic, events, interval_range=intervals, seed=args.seed, max_duration=duration)
+        if event_count is not None and count < event_count:
+            logger.error("production_incomplete", extra={"details": {"count": count, "requested": event_count}})
+            return 1
         logger.info("production_finished", extra={"details": {"count": count}})
         return 0
     except KeyboardInterrupt:

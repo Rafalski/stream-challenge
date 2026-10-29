@@ -10,7 +10,7 @@ from pathlib import Path
 
 from confluent_kafka import Consumer, KafkaException
 
-from stream_challenge.archive import archive_record
+from stream_challenge.archive import ArchiveGuard, archive_record
 from stream_challenge.logging_config import configure_logging
 
 
@@ -23,6 +23,7 @@ def consume_records(
     output_dir: Path,
     max_records: int = 0,
     idle_timeout: float | None = None,
+    guard: ArchiveGuard | None = None,
 ) -> int:
     """Archive records and commit offsets only after successful writes."""
     consumer.subscribe([topic])
@@ -30,6 +31,9 @@ def consume_records(
     last_record = time.monotonic()
 
     while not max_records or count < max_records:
+        if guard is not None:
+            guard.check()
+
         # A deadline is useful for finite demos; normal ingestion just waits.
         remaining = None if idle_timeout is None else idle_timeout - (time.monotonic() - last_record)
         if remaining is not None and remaining <= 0:
@@ -41,7 +45,7 @@ def consume_records(
             raise KafkaException(message.error())
 
         # Keep even malformed payloads. Flink will handle validation separately.
-        archive_record(output_dir, message.topic(), message.partition(), message.offset(), message.value())
+        archive_record(output_dir, message.topic(), message.partition(), message.offset(), message.value(), guard=guard)
 
         # If a write fails, leave the offset alone so the record can be retried.
         committed = consumer.commit(message=message, asynchronous=False)
@@ -74,11 +78,19 @@ def main() -> int:
     parser.add_argument("--max-records", type=int, default=0, help="Stop after this many records; 0 runs continuously.")
     parser.add_argument("--idle-timeout", type=float, help="Fail if no record arrives within this many seconds.")
 
+    # Small local budgets are enabled by default, with an explicit opt-out.
+    parser.add_argument("--max-archive-files", type=int, default=10000)
+    parser.add_argument("--max-archive-mib", type=int, default=100)
+    parser.add_argument("--min-free-mib", type=int, default=1024)
+    parser.add_argument("--no-safeguards", action="store_true", help="Disable archive budgets and free-space checks.")
+
     args = parser.parse_args()
     if args.max_records < 0:
         parser.error("--max-records must be non-negative")
     if args.idle_timeout is not None and (not math.isfinite(args.idle_timeout) or args.idle_timeout <= 0):
         parser.error("--idle-timeout must be finite and positive")
+    if args.max_archive_files < 1 or args.max_archive_mib < 1 or args.min_free_mib < 0:
+        parser.error("archive budgets must be positive and --min-free-mib cannot be negative")
 
     configure_logging()
     signal.signal(signal.SIGTERM, stop)
@@ -96,8 +108,22 @@ def main() -> int:
         metadata = consumer.list_topics(args.topic, timeout=10)
         if args.topic not in metadata.topics or metadata.topics[args.topic].error:
             raise RuntimeError("input topic is unavailable; run Kafka initialization first")
+
+        guard = None
+        if args.no_safeguards:
+            logger.warning("safeguards_disabled", extra={"details": {"scope": "archive"}})
+        else:
+            guard = ArchiveGuard(
+                args.output_dir, max_files=args.max_archive_files,
+                max_bytes=args.max_archive_mib * 1024**2, min_free_bytes=args.min_free_mib * 1024**2,
+            )
+            logger.info("archive_guard_enabled", extra={"details": {
+                "existing_files": guard.files, "existing_bytes": guard.bytes,
+                "max_files": guard.max_files, "max_bytes": guard.max_bytes,
+                "min_free_bytes": guard.min_free_bytes,
+            }})
         logger.info("ingestion_started", extra={"details": {"topic": args.topic, "group": args.group_id}})
-        count = consume_records(consumer, args.topic, args.output_dir, args.max_records, args.idle_timeout)
+        count = consume_records(consumer, args.topic, args.output_dir, args.max_records, args.idle_timeout, guard=guard)
         logger.info("ingestion_finished", extra={"details": {"count": count}})
         return 0
     except KeyboardInterrupt:

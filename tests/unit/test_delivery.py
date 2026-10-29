@@ -4,6 +4,7 @@ from unittest.mock import Mock
 import pytest
 
 from stream_challenge.ingest import consume_records
+from stream_challenge.events import generate_events
 from stream_challenge.producer import publish_events
 
 
@@ -73,3 +74,18 @@ def test_undelivered_messages_are_not_reported_as_success():
     event = {"user_id": 1, "postcode": "SW19", "webpage": "www.website.com/index.html", "timestamp": 1611662684}
     with pytest.raises(TimeoutError):
         publish_events(producer, "pageviews", [event])
+
+
+def test_producer_duration_limit_prevents_the_next_send(monkeypatch):
+    now = [0]
+    monkeypatch.setattr("stream_challenge.producer.time.monotonic", lambda: now[0])
+    producer = Mock()
+
+    def deliver(**kwargs):
+        kwargs["on_delivery"](None, message())
+        now[0] += 1
+
+    producer.produce.side_effect = deliver
+    producer.flush.return_value = 0
+    assert publish_events(producer, "pageviews", generate_events(3), max_duration=1) == 1
+    producer.produce.assert_called_once()

@@ -5,6 +5,7 @@
 - Read SPEC.md and ROADMAP.md before changes; consult docs/ENGINEERING_GUIDE.md for decisions. Implement only the milestone authorised by the engineer.
 - Work in small, reviewable increments within the current milestone. Present unresolved choices for review and record agreed decisions.
 - Verify the milestone and obtain engineer review before starting the next. Keep requirements, roadmap and documentation aligned with actual behaviour.
+- Keep the local implementation proportionate without ignoring known production failure modes. Bound resource growth, make limits explicit and record what must change before sustained or production use; do not equate a runnable demo with production readiness.
 
 ## Code and verification
 
@@ -25,5 +26,5 @@
 
 - Do not commit, push, create or merge PRs, or change repository visibility. The engineer owns Git history.
 - Done means approved scope delivered, relevant checks passed, documentation/traceability updated and limitations reported. Documentation checks do not establish runtime correctness.
-- Report changes, checks, outstanding issues and an accurate short commit suggestion. Do not manufacture history.
+- Report changes, checks and outstanding issues. Always give commit suggestions as a full `git commit -m "Short accurate message"` command. Do not execute it or manufacture history.
 - Agent Forge remains deferred and requires separate authorisation.

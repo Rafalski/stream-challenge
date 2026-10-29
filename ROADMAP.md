@@ -8,7 +8,7 @@ Work in order, with approval before each next milestone. Tests and documentation
 | --- | --- | --- | --- | --- |
 | [x] | 0. Specification and architecture | Requirements and local implementation route agreed; later design decisions remain open | Documentation links, sample values, traceability and consistency reviewed | Engineer authorised milestone 1 on 29 October 2026 |
 | [x] | 1. Docker infrastructure and Kafka | Compose setup, readiness checks, topic initialization and run instructions reviewed locally by engineer | Startup, repeat initialization, real publish/consume, persistence, shutdown and reset verified | 0; engineer authorised milestone 2 |
-| [ ] | 2. Producer and raw ingestion | Producer, continuous raw ingester, per-record archive and Docker/local commands implemented; awaiting review | Core units and three real-Kafka checks pass; Docker writes host-visible files; fixed/random pacing and continuous production checked manually | 1; per-record archive selected by engineer; offset/acknowledgement policies recorded |
+| [ ] | 2. Producer and raw ingestion | Producer, raw ingester, per-record archive and default-on optional local safeguards implemented; awaiting review | Core units and four real-Kafka checks pass; Docker output and demo controls verified; blocked writes leave offsets uncommitted | 1; per-record archive selected by engineer; offset/acknowledgement policies recorded |
 | [ ] | 3. PyFlink aggregation | Continuous postcode counts reach a separate directory; base DQ rejects invalid input with visible reasons while valid input continues | Real Kafka/Flink tests for boundaries, ordering, invalid/late input, raw preservation and output visibility | 2; API, sink, DQ, event-time and checkpoint policies agreed |
 | [ ] | 4. Unit and end-to-end testing | Repeatable harness isolates resources, checks aggregate quality, reconciles known input/output counts, reports and cleans up | Happy path, multiple windows/postcodes, missing/invalid values, late/out-of-order input and quiet streams; account for exclusions and replay | 3; completion protocol agreed |
 | [ ] | 5. Reliability and error handling | Recovery, retries and failures behave as documented; core demonstration passes | Interruptions, restart/replay, failed writes, consumer independence and checkpoints if enabled | 4; delivery guarantees agreed |
@@ -18,6 +18,8 @@ Work in order, with approval before each next milestone. Tests and documentation
 | [ ] | 9. Documentation and final review | Verified README walkthrough, requirement coverage and public-safe source; engineer handles public GitHub availability | Full demonstration, required suites, content review and engineer publication check | 7; optional work completed or deferred |
 
 Mandatory functionality is covered by milestones 1-5. CI and final review remain required engineering work. Milestone 3 must wait for review of milestone 2 and agreement of the Flink decisions.
+
+Before extended-volume or production use, separately agree byte-preserving rolled archives, retention and recovery evidence. This is a readiness gate, not a claim that the current bounded local archive supports sustained daily volume.
 
 Security, automation and diagrams are bonuses in the brief. Our plan already includes CI and Mermaid diagrams; additional hardening and alerting remain optional and need an agreed scope.
 
