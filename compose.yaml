@@ -80,6 +80,79 @@ services:
       LOG_COLOUR: "${LOG_COLOUR:-always}"
     entrypoint: ["python", "-m", "stream_challenge.producer"]
 
+  jobmanager:
+    build:
+      context: .
+      dockerfile: Dockerfile.flink
+    image: stream-challenge-flink:local
+    profiles: ["flink"]
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - ./flink-config.yaml:/usr/local/lib/python3.11/site-packages/pyflink/conf/config.yaml:ro
+      - ./data:/app/data
+    command: ["jobmanager.sh", "start-foreground"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/overview"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  taskmanager:
+    image: stream-challenge-flink:local
+    profiles: ["flink"]
+    depends_on:
+      jobmanager:
+        condition: service_healthy
+    environment:
+      LOG_FORMAT: "${LOG_FORMAT:-console}"
+      LOG_COLOUR: "${LOG_COLOUR:-always}"
+    volumes:
+      - ./flink-config.yaml:/usr/local/lib/python3.11/site-packages/pyflink/conf/config.yaml:ro
+      - ./data:/app/data
+    command: ["taskmanager.sh", "start-foreground"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json, urllib.request; assert json.load(urllib.request.urlopen('http://jobmanager:8081/overview', timeout=3))['taskmanagers'] == 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  aggregation:
+    image: stream-challenge-flink:local
+    profiles: ["flink"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      jobmanager:
+        condition: service_healthy
+      taskmanager:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      LOG_FORMAT: "${LOG_FORMAT:-console}"
+      LOG_COLOUR: "${LOG_COLOUR:-always}"
+    volumes:
+      - ./flink-config.yaml:/usr/local/lib/python3.11/site-packages/pyflink/conf/config.yaml:ro
+      - ./data:/app/data
+    entrypoint: ["flink", "run", "--jobmanager", "jobmanager:8081", "--python", "/app/src/stream_challenge/aggregation.py"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   kafka-smoke-test:
     image: apache/kafka:4.3.2
     profiles: ["test"]

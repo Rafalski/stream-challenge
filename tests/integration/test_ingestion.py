@@ -6,7 +6,7 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
-from confluent_kafka import Consumer, Producer, TopicPartition, OFFSET_INVALID
+from confluent_kafka import Consumer, Producer, TopicPartition, OFFSET_INVALID, KafkaError, KafkaException
 from confluent_kafka.admin import AdminClient, NewTopic
 
 from stream_challenge.ingest import consume_records
@@ -33,7 +33,12 @@ def kafka_topic():
         try:
             if resources.groups:
                 for future in admin.delete_consumer_groups(resources.groups).values():
-                    future.result(timeout=15)
+                    try:
+                        future.result(timeout=15)
+                    except KafkaException as error:
+                        # A Flink source can fail before it creates committed group offsets.
+                        if error.args[0].code() != KafkaError.GROUP_ID_NOT_FOUND:
+                            raise
         finally:
             admin.delete_topics([topic])[topic].result(timeout=15)
 

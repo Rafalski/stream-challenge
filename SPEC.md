@@ -1,6 +1,6 @@
 # Specification
 
-Baseline agreed on 29 October 2026. Milestone 1 is reviewed; milestone 2 is implemented for review. This file defines the required outcome. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records choices and open decisions. Kafka, event generation and raw archival are available; Flink aggregation is not yet implemented.
+Baseline agreed on 29 October 2026; Flink implementation authorised on 31 October 2026. Milestones 1 and 2 are reviewed; milestone 3 is implemented and locally verified, awaiting review. This file defines the required outcome. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records choices and open decisions.
 
 ## Scope
 
@@ -48,7 +48,7 @@ These are project additions, not extra requirements attributed to the brief. The
 - Verify output quality independently in end-to-end scenarios: required aggregate fields, valid minute boundaries, positive integer counts and one final result per postcode/window under the agreed final-output policy. If corrections are selected, define how final results are identified.
 - Reconcile known test inputs with validation outcomes and aggregate counts, accounting for late exclusions and replay under the agreed policies. Check counts by postcode/window as well as totals. Compare raw records and outputs only after the scenario's observable completion conditions are met, not by assuming both consumers progress together.
 
-Extra-field handling, blank strings, identifier ranges, timestamp bounds and late-event treatment still need agreement. Do not reject historical events merely because they are old: the supplied sample must remain valid. Do not require full postcodes or URL schemes, add source fields or deduplicate identical pageviews without a separate decision.
+The agreed baseline rejects extra fields and blank postcode/webpage strings, preserves non-blank strings unchanged, and accepts integer identifiers without an added sign restriction. Timestamps must be epoch seconds representable as UTC datetimes (years 1-9999) and no more than five minutes ahead of processing time by default. Historical events remain valid. Late records for closed windows are excluded with diagnostics, without changing raw archival. These are project policies, not additional rules from the brief. Do not require full postcodes or URL schemes, add source fields or deduplicate identical pageviews without a separate decision.
 
 ## Requirements and verification
 
@@ -95,4 +95,4 @@ The engineer reviews decisions and owns Git history. No agent commits, pushes, P
 
 Demonstrate generation, Kafka publication, unchanged raw archival, correct postcode/window/count records, separate aggregate files and documented error behaviour. Run the relevant tests and verify the README walkthrough. The engineer handles public publication; its requirement does not authorise agent pushes or repository visibility changes.
 
-PyFlink API/versions, aggregate format/schema, further validation limits, watermark/late-event policy and Flink checkpointing remain open in the engineering guide. The raw format and producer/consumer offset policies are now recorded there. Those choices must not be treated as additional requirements from the brief.
+The verified Flink baseline uses DataStream processing, JSONL output with `postcode`, UTC `window_start` and `pageview_count`, five-second disorder tolerance, final-only windows and ten-second checkpoints. A quiet stream can leave its last window open. Versions and runtime evidence are recorded in the engineering guide; broader recovery guarantees and production storage remain deferred. These choices must not be treated as additional requirements from the brief.

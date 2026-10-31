@@ -1,0 +1,22 @@
+FROM python:3.11.18-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+    FLINK_HOME=/usr/local/lib/python3.11/site-packages/pyflink
+ENV PATH="${FLINK_HOME}/bin:${JAVA_HOME}/bin:${PATH}"
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir apache-flink==2.2.1 \
+    && curl --fail --location --retry 3 \
+       https://repo.maven.apache.org/maven2/org/apache/flink/flink-sql-connector-kafka/5.0.0-2.2/flink-sql-connector-kafka-5.0.0-2.2.jar \
+       --output "${FLINK_HOME}/lib/flink-sql-connector-kafka-5.0.0-2.2.jar" \
+    && useradd --create-home --uid 1000 appuser \
+    && chown -R appuser:appuser "${FLINK_HOME}"
+
+COPY pyproject.toml .
+COPY src ./src
+RUN pip install --no-cache-dir .
+
+USER appuser

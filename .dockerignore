@@ -1,5 +1,6 @@
 *
 !Dockerfile
+!Dockerfile.flink
 !pyproject.toml
 !src/
 !src/**

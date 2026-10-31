@@ -19,4 +19,4 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-m 'not integration' --strict-markers"
-markers = ["integration: requires local Kafka on 127.0.0.1:9092"]
+markers = ["integration: requires local Docker services", "flink: also requires the Flink cluster on 127.0.0.1:8081"]

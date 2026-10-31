@@ -4,9 +4,9 @@ A local Python streaming exercise: generate website pageviews, publish them to K
 
 ## Start here
 
-Kafka, the Python producer and independent raw ingester are implemented, with local unit tests and Kafka integration checks. Flink aggregation and CI are not implemented yet.
+Kafka, the Python producer, independent raw ingester and PyFlink aggregation are implemented and verified locally. Milestone 3 awaits engineer review. CI is not implemented yet.
 
-Prerequisites: Docker with a running Linux-container engine, a Compose plugin supporting `up --wait` and `wait`, and host port 9092 available. On Windows, use Docker Desktop in Linux-container mode. No host Python, Java or Kafka installation is needed to run through Docker. Local tests use a Python virtual environment. Run commands from the repository root; Python setup and file inspection examples below use PowerShell.
+Prerequisites: Docker with a running Linux-container engine, a Compose plugin supporting `up --wait` and `wait`, and host ports 9092 and 8081 available. On Windows, use Docker Desktop in Linux-container mode. No host Python, Java or Kafka installation is needed to run through Docker. Local tests use a Python virtual environment. Run commands from the repository root; Python setup and file inspection examples below use PowerShell.
 
 ## Start Kafka
 
@@ -55,7 +55,46 @@ Get-ChildItem data/raw/pageviews/0/*.bin
 Get-Content data/raw/pageviews/0/0.bin
 ```
 
-Wait for the corresponding `record_archived` log before expecting a file. The first event in a fresh topic is offset 0. Flink aggregate files are not available yet.
+Wait for the corresponding `record_archived` log before expecting a file. The first event in a fresh topic is offset 0.
+
+## Aggregate pageviews
+
+Flink runs in Docker, keeping Java and PyFlink out of the host Python environment. The first build downloads a sizeable runtime and can take several minutes. Allow roughly 4 GiB of available Docker memory for the local pipeline, plus headroom for image builds. The image currently targets Linux x86-64.
+
+```text
+docker compose up -d --build --wait --wait-timeout 180 jobmanager taskmanager
+docker compose up -d aggregation
+docker compose logs --tail 50 aggregation
+```
+
+Open the [Flink UI](http://127.0.0.1:8081) and check that `postcode-pageviews` is **RUNNING**. Container startup alone does not establish that the job is running. Run one aggregation job at a time; the local TaskManager has one slot.
+
+With the raw ingester also running, generate current-time traffic for a short demonstration:
+
+```text
+docker compose run --rm producer --continuous --interval-range 0.2 1.5 --max-duration 150
+docker compose logs --tail 50 taskmanager
+```
+
+Windows finish as event time advances beyond the minute plus the five-second disorder allowance. Completed files become visible after a successful ten-second checkpoint, so output is not immediate. If traffic stops, the final minute stays open until later valid events advance event time. A checkpoint alone does not close that window.
+
+Inspect completed output in PowerShell:
+
+```powershell
+Get-ChildItem data/aggregates/part-*.jsonl | Get-Content
+```
+
+Each JSON line contains `postcode`, UTC `window_start` and `pageview_count`. Ignore hidden in-progress files. Flink writes multiple aggregates per part file and stores checkpoints separately in `data/checkpoints`. The UI exposes checkpoint status, application counters (`valid_events`, `invalid_events`, `late_events`) and the file writer's `numRecordsIn` for aggregate output. An `aggregate_emitted` log means computed, not yet committed to a readable file.
+
+Invalid records and arrivals for closed windows are excluded with diagnostic reasons; raw ingestion still preserves their bytes. See the [agreed policies](docs/ENGINEERING_GUIDE.md#technical-decisions). Flink's Java runtime logs keep their own format; Python application log settings remain selectable.
+
+Fresh submissions replay retained Kafka data from the earliest offsets. They require empty output/checkpoint directories and do not automatically restore previous state. For another run, stop the existing job through the UI, then use new directories:
+
+```text
+docker compose run --rm aggregation --output-dir /app/data/aggregates-next --checkpoint-dir /app/data/checkpoints-next
+```
+
+Use a different fresh pair for each independent rerun. Do not run a second job alongside the first or combine output from replayed runs when counting pageviews. Tested checkpoint restoration and broader failure recovery remain milestone 5 work.
 
 ## Local run safeguards
 
@@ -77,7 +116,7 @@ docker compose run --rm producer --continuous --interval 0.1 --max-duration 60
 
 Pass `--no-safeguards` to the relevant producer or ingester command to opt out; this logs a warning. On the producer it disables only the duration limit, not `--count`. On the ingester it disables both archive budgets and free-space checks. Use one active writer per archive directory. To run an ingester with custom flags, stop the background ingester first and use `docker compose run --rm raw-ingester` with those flags.
 
-These are local checks, not distributed quotas: file counters include the startup scan plus this writer's changes, byte totals exclude filesystem metadata, and free-space checks are periodic. They cover the raw archive, not all Docker storage or future aggregate output. The Docker bind-mount and host free-space readings matched in this Windows environment; that has not been verified on other platforms.
+These are local checks, not distributed quotas: file counters include the startup scan plus this writer's changes, byte totals exclude filesystem metadata, and free-space checks are periodic. Archive limits cover the raw archive, not aggregate files, checkpoints or all Docker storage. Keep Flink demonstrations bounded too; production output retention and file sizing remain deferred. The Docker bind-mount and host free-space readings matched in this Windows environment; that has not been verified on other platforms.
 
 If a limit stops the ingester, the producer and Kafka keep running independently. Stop the producer and review the error rather than treating the run as complete. Kafka can retain the blocked records only within its configured retention policy. Retention and byte-preserving rolled batches must be designed and tested before sustained-volume or production use; these guardrails do not make one file per event a production archive design.
 
@@ -91,7 +130,7 @@ Docker enables console colours explicitly so they appear in `docker compose logs
 docker compose run --rm -e LOG_FORMAT=json producer --count 1 --interval 0
 ```
 
-The available settings are `LOG_FORMAT=console|json` and `LOG_COLOUR=auto|always|never`. Shell settings override Compose defaults. These formatters apply to our Python applications, not Kafka's broker logs. Logs use UTC timestamps and Kafka coordinates; event payloads are not logged.
+The available settings are `LOG_FORMAT=console|json` and `LOG_COLOUR=auto|always|never`. Shell settings override Compose defaults. These formatters apply to our Python applications, not Kafka's broker logs. Flink forwards formatted Python messages inside its Java log entries, so selecting JSON does not make the entire TaskManager log a JSON stream. Logs use UTC timestamps and Kafka coordinates; event payloads are not logged.
 
 ## Verify and inspect
 
@@ -119,13 +158,19 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-The default run covers core unit tests without Docker. With Kafka running, run the integration checks locally:
+The default run covers core unit tests without Docker or PyFlink. With Kafka running, run its integration checks locally:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -m integration
+.\.venv\Scripts\python.exe -m pytest -m "integration and not flink"
 ```
 
-These create isolated topics, groups and temporary directories. They exercise the real producer/ingester commands, preserve malformed/empty/null/repeated values and verify that a failed write or archive limit leaves its offset available for retry. This is not yet an end-to-end aggregation test suite.
+With the Flink cluster healthy and no demo aggregation job occupying its slot, select the streaming scenario:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -m flink -v
+```
+
+Integration checks create isolated topics, groups and directories. The Flink scenario exercises the real continuous job, compares literal expected postcode/minute counts, verifies invalid and late outcomes, preserves raw bytes and observes checkpoint-committed files. It also checks that a quiet final minute remains pending. Its job and test resources are cleaned up; the shared Kafka/Flink services remain running. The broader scenario harness is milestone 4 work.
 
 ## Stop or reset
 
@@ -133,13 +178,13 @@ These create isolated topics, groups and temporary directories. They exercise th
 docker compose --profile "*" down
 ```
 
-Enabling all profiles here also removes application containers, while retaining Kafka records in the project's named volume. Stop any foreground producer first with Ctrl+C. To discard Kafka records and start with an empty broker instead:
+Enabling all profiles here also removes application and Flink containers, while retaining Kafka records in the project's named volume. Stop any foreground producer first with Ctrl+C. Shutdown is not a final-window flush or a savepoint. To discard Kafka records and start with an empty broker instead:
 
 ```text
 docker compose --profile "*" down --volumes
 ```
 
-The reset deletes this Compose project's Kafka data, but not host files under `data/`. Restart with the commands above to recreate the topic. After resetting Kafka, use a fresh archive directory rather than mixing reused offsets with an older topic's files, for example:
+The reset deletes this Compose project's Kafka data, but not raw files, aggregate files or checkpoints under host `data/`. Restart with the commands above to recreate the topic. Use fresh Flink output/checkpoint directories for a new submission. After resetting Kafka, use a fresh archive directory rather than mixing reused offsets with an older topic's files, for example:
 
 ```text
 docker compose run --rm raw-ingester --output-dir data/raw-next
@@ -149,7 +194,7 @@ Run this instead of the background ingester, not alongside it with the same cons
 
 ## Status and limitations
 
-Verified on Windows with Docker Engine 29.9.2 and Compose 5.6.0: Kafka startup/persistence/reset, native Python tests and Kafka integration, Docker production/archival and host-visible output. Local tests use Python 3.11.2; the image uses 3.11.18. Other host platforms have not been verified.
+Verified on Windows with Docker Engine 29.9.2 and Compose 5.6.0: Kafka startup/persistence/reset, native Python tests, Docker production/archival and continuous Kafka/Flink aggregation with host-visible committed output. Flink 2.2.1, Kafka connector `5.0.0-2.2`, Java 17 and Python 3.11 work together in the local image. Local tests use Python 3.11.2; the images use 3.11.18. Other host platforms have not been verified.
 
 Archival uses one file per record for clarity and byte preservation. Files accumulate quickly; retention and batching need review for sustained use. Files are flushed, fsynced and atomically renamed before synchronous offset commits. Matching replays reuse the same file; conflicting contents fail visibly. There is no atomic transaction between filesystem writes and Kafka, or verified power-loss guarantee. Broader recovery testing belongs to milestone 5.
 

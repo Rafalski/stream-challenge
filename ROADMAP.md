@@ -1,6 +1,6 @@
 # Roadmap
 
-Milestones 0 and 1 are reviewed. Milestone 2 is implemented and verified, awaiting engineer review. Flink and later milestones are unstarted. Checkboxes mean verified completion and engineer review.
+Milestones 0-2 are reviewed. The engineer authorised milestone 3 and its baseline on 31 October 2026. Milestone 3 is implemented and verified locally, awaiting review; later milestones remain unstarted. Checkboxes mean verified completion and engineer review.
 
 Work in order, with approval before each next milestone. Tests and documentation accompany features from the start; milestones 4 and 5 consolidate coverage and harden behaviour. Optional milestones 6 and 8 may be explicitly deferred.
 
@@ -8,8 +8,8 @@ Work in order, with approval before each next milestone. Tests and documentation
 | --- | --- | --- | --- | --- |
 | [x] | 0. Specification and architecture | Requirements and local implementation route agreed; later design decisions remain open | Documentation links, sample values, traceability and consistency reviewed | Engineer authorised milestone 1 on 29 October 2026 |
 | [x] | 1. Docker infrastructure and Kafka | Compose setup, readiness checks, topic initialization and run instructions reviewed locally by engineer | Startup, repeat initialization, real publish/consume, persistence, shutdown and reset verified | 0; engineer authorised milestone 2 |
-| [ ] | 2. Producer and raw ingestion | Producer, raw ingester, per-record archive and default-on optional local safeguards implemented; awaiting review | Core units and four real-Kafka checks pass; Docker output and demo controls verified; blocked writes leave offsets uncommitted | 1; per-record archive selected by engineer; offset/acknowledgement policies recorded |
-| [ ] | 3. PyFlink aggregation | Continuous postcode counts reach a separate directory; base DQ rejects invalid input with visible reasons while valid input continues | Real Kafka/Flink tests for boundaries, ordering, invalid/late input, raw preservation and output visibility | 2; API, sink, DQ, event-time and checkpoint policies agreed |
+| [x] | 2. Producer and raw ingestion | Producer, raw ingester, per-record archive and default-on optional local safeguards reviewed | Core units and four real-Kafka checks pass; Docker output and demo controls verified; blocked writes leave offsets uncommitted | 1; engineer authorised milestone 3 |
+| [ ] | 3. PyFlink aggregation | DataStream job, DQ, JSONL sink and checkpoints implemented; awaiting review | 59 local units, four Kafka checks and one continuous Kafka/Flink scenario pass: boundaries, ordering, invalid/late input, raw preservation, committed output and quiet windows | 2; baseline and compatible runtime verified |
 | [ ] | 4. Unit and end-to-end testing | Repeatable harness isolates resources, checks aggregate quality, reconciles known input/output counts, reports and cleans up | Happy path, multiple windows/postcodes, missing/invalid values, late/out-of-order input and quiet streams; account for exclusions and replay | 3; completion protocol agreed |
 | [ ] | 5. Reliability and error handling | Recovery, retries and failures behave as documented; core demonstration passes | Interruptions, restart/replay, failed writes, consumer independence and checkpoints if enabled | 4; delivery guarantees agreed |
 | [ ] | 6. Prometheus and Grafana: optional | Existing integrations expose useful signals; agree alerts if included and document unavailable metrics | Scraping, known traffic, failure visibility and any agreed alerts | 5; explicit agreement to include |
@@ -17,7 +17,7 @@ Work in order, with approval before each next milestone. Tests and documentation
 | [ ] | 8. Agent Forge investigation: deferred, optional | Isolated controlled defect, independent detection, investigation and proposed regression test; approval before a fix branch or PR | Healthy baseline, defect reproduction and independent validation | 7; monitoring if needed; separate authorisation |
 | [ ] | 9. Documentation and final review | Verified README walkthrough, requirement coverage and public-safe source; engineer handles public GitHub availability | Full demonstration, required suites, content review and engineer publication check | 7; optional work completed or deferred |
 
-Mandatory functionality is covered by milestones 1-5. CI and final review remain required engineering work. Milestone 3 must wait for review of milestone 2 and agreement of the Flink decisions.
+Mandatory functionality is covered by milestones 1-5. CI and final review remain required engineering work. Milestone 3 uses the agreed baseline in the engineering guide; it must be verified and reviewed before milestone 4.
 
 Before extended-volume or production use, separately agree byte-preserving rolled archives, retention and recovery evidence. This is a readiness gate, not a claim that the current bounded local archive supports sustained daily volume.
 

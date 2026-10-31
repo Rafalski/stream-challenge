@@ -92,4 +92,11 @@ def configure_logging() -> None:
         formatter = ConsoleFormatter(colour)
 
     handler.setFormatter(formatter)
-    logging.basicConfig(level=logging.INFO, handlers=[handler])
+    root = logging.getLogger()
+    if root.handlers:
+        # Flink already forwards Python logs. Keep that route, but include our details.
+        for existing in root.handlers:
+            existing.setFormatter(formatter)
+        root.setLevel(logging.INFO)
+    else:
+        logging.basicConfig(level=logging.INFO, handlers=[handler])
