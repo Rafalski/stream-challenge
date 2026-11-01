@@ -36,7 +36,7 @@ Wait until all three Flink boxes show running tasks. The separate `raw-ingester`
 ## 3. Open the live views
 
 - [Grafana](http://127.0.0.1:3000/d/streaming-demo): leave `postcode-pageviews` and Job ID **All** selected. Watch throughput, checkpoints and consumer lag.
-- [Kafka browser](http://127.0.0.1:8080): select **local → Topics → pageviews → Messages → Live**. Expand a record to inspect its four fields.
+- [Kafka browser](http://127.0.0.1:8080): select **local Ã¢â€ â€™ Topics Ã¢â€ â€™ pageviews Ã¢â€ â€™ Messages Ã¢â€ â€™ Live**. Expand a record to inspect its four fields.
 - [Flink](http://127.0.0.1:8081): inspect the running job and its checkpoint history.
 
 ## 4. Produce low, busy and medium traffic
@@ -61,6 +61,22 @@ docker compose logs --tail 10 raw-ingester
 ```
 
 Each JSONL row contains `postcode`, `window_start` in UTC and `pageview_count`. Files appear on the host under the matching `data/` directory. Repeat the command to see later results. The final quiet minute can remain open; [timing explained](ENGINEERING_GUIDE.md#checkpoints-and-event-time).
+
+For a table and keyboard screen, use the host Python environment prepared in step 6. Install the optional screen extra once:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[viewer]"
+$resultsDir = $aggregateDir -replace '^/app/', ''
+.\.venv\Scripts\python.exe -m stream_challenge.results $resultsDir --interactive
+```
+
+Use Tab to move between sections, 1/2 from the table to edit filters, Enter to apply/view, arrows to select, R to refresh and Q to quit. For a plain filtered preview:
+
+```powershell
+.\.venv\Scripts\python.exe -m stream_challenge.results $resultsDir --postcode SW19 --minute 2026-11-01T19:46
+```
+
+Replace the example UTC minute with one present in the output; omit either filter to show all matching rows. [Viewer reference](../README.md#aggregate-results-viewer).
 
 ## 6. Optional automated checks
 
@@ -87,3 +103,21 @@ docker compose --profile "*" down
 ```
 
 Kafka data and host output files are retained. Further setup and safeguards are in the [README](../README.md).
+
+## 8. Optional complete reset
+
+This discards the local demo history. Stop producers and close the viewer first, then run:
+
+```powershell
+docker compose --profile "*" down --volumes --remove-orphans
+```
+
+This removes project containers, Kafka topics/consumer offsets and Prometheus history. It does not delete host files. In File Explorer, delete only this repository's `data` folder, including raw files, aggregates, checkpoints, per-run folders and diagnostic logs. Keep source files, `.venv`, `.venv-linux` and `.local-notes`.
+
+Recreate the empty output root and follow steps 1 and 2 for a fresh pipeline and job:
+
+```powershell
+New-Item -ItemType Directory -Force data | Out-Null
+```
+
+No reset is needed just to repeat traffic. For an independent aggregation submission, cancel the old job and use the fresh-directory command in step 2. Reset Kafka and raw storage together: retaining old consumer offsets while deleting raw files does not rebuild the archive.

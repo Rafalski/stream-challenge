@@ -11,7 +11,7 @@ docker compose version
 
 Git Bash otherwise rewrites container paths such as `/app/data` into Windows paths under `C:/Program Files/Git`, causing checkpoint-directory failures. `MSYS_NO_PATHCONV` disables that conversion in this shell; it is harmless in Linux/WSL. Quoting a path alone does not prevent conversion.
 
-If WSL reports that Docker is unavailable, enable the Ubuntu distribution under Docker Desktop **Settings → Resources → WSL Integration**, then reopen the terminal.
+If WSL reports that Docker is unavailable, enable the Ubuntu distribution under Docker Desktop **Settings Ã¢â€ â€™ Resources Ã¢â€ â€™ WSL Integration**, then reopen the terminal.
 
 ## 1. Start services
 
@@ -49,7 +49,7 @@ If submission fails with a checkpoint path containing `C:/Program Files/Git`, ru
 ## 3. Open the live views
 
 - [Grafana](http://127.0.0.1:3000/d/streaming-demo): leave `postcode-pageviews` and Job ID **All** selected. Watch throughput, checkpoints and consumer lag.
-- [Kafka browser](http://127.0.0.1:8080): select **local → Topics → pageviews → Messages → Live**. Expand a record to inspect its four fields.
+- [Kafka browser](http://127.0.0.1:8080): select **local Ã¢â€ â€™ Topics Ã¢â€ â€™ pageviews Ã¢â€ â€™ Messages Ã¢â€ â€™ Live**. Expand a record to inspect its four fields.
 - [Flink](http://127.0.0.1:8081): inspect the running job and its checkpoint history.
 
 A fresh submission replays retained Kafka input. Before producing demo traffic, let `postcode-aggregation` lag settle to zero and confirm completed checkpoints are increasing. Older output minutes during replay are expected.
@@ -76,6 +76,22 @@ docker compose logs --tail 10 raw-ingester
 ```
 
 Each JSONL row contains `postcode`, `window_start` in UTC and `pageview_count`. Files appear on the host under the matching `data/` directory. Repeat the command to see later results. The final quiet minute can remain open; [timing explained](ENGINEERING_GUIDE.md#checkpoints-and-event-time).
+
+For a table and keyboard screen, use the host Python environment prepared in step 6. Install the optional screen extra once. Git Bash:
+
+```bash
+.venv/Scripts/python.exe -m pip install -e '.[viewer]'
+results_dir="${aggregate_dir#/app/}"
+winpty .venv/Scripts/python.exe -m stream_challenge.results "$results_dir" --interactive
+```
+
+Use Tab to move between sections, 1/2 from the table to edit filters, Enter to apply/view, arrows to select, R to refresh and Q to quit. The `winpty` prefix supplies the console bridge needed by Git Bash/mintty. Omit it in Windows Terminal if unnecessary; do not use it for Linux/WSL. For a plain filtered preview:
+
+```bash
+.venv/Scripts/python.exe -m stream_challenge.results "$results_dir" --postcode SW19 --minute 2026-11-01T19:46
+```
+
+Replace the example UTC minute with one present in the output; omit either filter to show all matching rows. Linux/WSL uses `.venv-linux/bin/python` for the install and viewer commands. [Viewer reference](../README.md#aggregate-results-viewer).
 
 ## 6. Optional automated checks
 
@@ -118,3 +134,21 @@ docker compose --profile "*" down
 ```
 
 Kafka data and host output files are retained. Further setup and safeguards are in the [README](../README.md).
+
+## 8. Optional complete reset
+
+This discards the local demo history. Stop producers and close the viewer first, then run:
+
+```bash
+docker compose --profile "*" down --volumes --remove-orphans
+```
+
+This removes project containers, Kafka topics/consumer offsets and Prometheus history. It does not delete host files. In the file manager, delete only this repository's `data` folder, including raw files, aggregates, checkpoints, per-run folders and diagnostic logs. Keep source files, `.venv`, `.venv-linux` and `.local-notes`.
+
+Recreate the empty output root and follow steps 1 and 2 for a fresh pipeline and job:
+
+```bash
+mkdir -p data
+```
+
+No reset is needed just to repeat traffic. For an independent aggregation submission, cancel the old job and use the fresh-directory command in step 2. Reset Kafka and raw storage together: retaining old consumer offsets while deleting raw files does not rebuild the archive.

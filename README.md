@@ -18,6 +18,28 @@ For Git Bash on Windows, run `export MSYS_NO_PATHCONV=1` in each new terminal be
 
 Windows checkouts are accessible through WSL under `/mnt/c/`. For regular Linux development, prefer a checkout in the Linux filesystem outside synchronised folders, following [Docker's filesystem guidance](https://docs.docker.com/desktop/features/wsl/best-practices/). Use separate Python virtual environments for Windows and Linux.
 
+## Services at a glance
+
+`stream-challenge` is the Docker Compose project grouping, not a container. Kafka is the event broker: producers publish records to its topic, and consumers read them independently.
+
+| Service/container | Role |
+| --- | --- |
+| `kafka-init` | Creates the `pageviews` topic, then exits successfully |
+| `kafka` | The Apache Kafka broker: stores events and serves producers and consumers |
+| `kafka-ui` | Kafbat's separate web interface for inspecting Kafka records and consumer groups |
+| `producer` | Python sample-event publisher; its temporary container is removed after each run |
+| `raw-ingester` | Independent Python consumer that archives original event bytes |
+| `jobmanager` | Flink coordinator: schedules the job and coordinates checkpoints |
+| `taskmanager` | Flink worker: executes the validation, window counting and file-writing operators |
+| `aggregation` | Submission client: sends the Python aggregation definition to Flink and waits for its outcome |
+| `kafka-exporter` | Reads Kafka metadata and committed offsets to expose consumer-lag metrics |
+| `prometheus` | Scrapes and stores numerical metrics from Flink and the Kafka exporter |
+| `grafana` | Queries Prometheus to display the monitoring dashboard |
+
+JobManager and TaskManager are separate containers using the same Flink image. The raw ingester is not part of the Flink job. The results viewer is a separate host Python command that reads finished aggregate files.
+
+`docker compose run aggregation` creates a one-off submission container, rather than the regular `aggregation-1` service instance. A custom name such as `aggregation-demo-...` may appear separately in Docker Desktop. It still belongs to this project: its labels identify project `stream-challenge`, service `aggregation` and `oneoff=True`. The Flink job itself is named `postcode-pageviews` and executes in TaskManager, not in the submission client. See the [architecture diagram](docs/ENGINEERING_GUIDE.md#architecture).
+
 ## Start Kafka
 
 ```text
@@ -103,7 +125,7 @@ Before starting the producer, open these views:
 | View | Watch | Interpretation |
 | --- | --- | --- |
 | [Grafana](http://127.0.0.1:3000/d/streaming-demo) | Throughput, accepted records, DQ, output, checkpoints and consumer lag | The busy phase increases rate; totals include earlier input. Lag compares broker and committed offsets, while output waits for event-time progress and checkpoints. |
-| [Kafka browser](http://127.0.0.1:8080) | `local → Topics → pageviews → Messages`, then **Live** | Inspect the original four-field JSON and increasing offsets. **Stop loading** freezes inspection without stopping the producer. |
+| [Kafka browser](http://127.0.0.1:8080) | `local ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Topics ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ pageviews ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Messages`, then **Live** | Inspect the original four-field JSON and increasing offsets. **Stop loading** freezes inspection without stopping the producer. |
 | [Flink UI](http://127.0.0.1:8081) | Running job, all tasks running, checkpoint history | Independent raw and aggregation consumers progress separately. Successful checkpoints commit finished files; they do not close an event-time window by themselves. |
 
 With the raw ingester also running and all Flink tasks **RUNNING**, use a three-minute live demonstration. Run these commands one after another in the same terminal. Each phase stops itself after 60 seconds; no records are sent after the last phase finishes.
@@ -126,33 +148,7 @@ Expect `record_published` in the producer, `record_archived` in the ingester and
 
 Windows are fixed UTC clock minutes, such as `[12:04:00, 12:05:00)`, rather than rolling counts over the last 60 seconds. They finish as event time advances beyond the window end plus the five-second disorder allowance. Completed files become visible after a successful ten-second checkpoint, so output is not immediate. A three-minute run shows several completed minutes; its first and last minutes may be partial. Traffic phases start when their commands run and need not line up with clock-minute boundaries. If traffic stops, the final minute stays open until later valid events advance event time. A checkpoint alone does not close that window.
 
-Inspect completed output in PowerShell:
-
-```powershell
-Get-ChildItem data/aggregates/part-*.jsonl | Get-Content | ConvertFrom-Json | Sort-Object window_start, postcode | Format-Table window_start, postcode, pageview_count -AutoSize
-```
-
-Bash:
-
-```bash
-find data/aggregates -maxdepth 1 -type f -name 'part-*.jsonl' -exec cat {} +
-```
-
-For a live view in a separate PowerShell terminal, refresh the table every two seconds. Ctrl+C stops the view, not the pipeline:
-
-```powershell
-while ($true) {
-    Clear-Host
-    Get-ChildItem data/aggregates/part-*.jsonl -ErrorAction SilentlyContinue | Get-Content | ConvertFrom-Json | Sort-Object window_start, postcode | Format-Table window_start, postcode, pageview_count -AutoSize
-    Start-Sleep -Seconds 2
-}
-```
-
-In Ubuntu Bash, the equivalent live JSONL view uses `watch`:
-
-```bash
-watch -n 2 'find data/aggregates -maxdepth 1 -type f -name "part-*.jsonl" -exec cat {} +'
-```
+Preview finished files together using the [Python results viewer](#aggregate-results-viewer), with optional postcode and UTC-minute filters. The demo guides also retain a Docker-only JSONL inspection command.
 
 Watch the Kafka browser for incoming JSON, Flink for job health and checkpoints, and this table for completed results. The Flink UI shows processing metrics; it is not a browser for the aggregate file contents. Select the source node and add `numRecordsOutPerSecond` in its Metrics view to see processing rate. `valid_events` should rise, the file writer's `numRecordsIn` should increase when windows emit, and completed checkpoints should continue advancing. Counts are cumulative, so expect a faster increase during the busy phase. Untouched zero-valued Python counters may not appear until used. The optional Grafana dashboard below brings these signals together.
 
@@ -170,6 +166,33 @@ docker compose run --rm aggregation --output-dir /app/data/aggregates-next --che
 
 Use a different fresh pair for each independent rerun. Do not run a second job alongside the first or combine output from replayed runs when counting pageviews. Tested checkpoint restoration and broader failure recovery remain milestone 5 work.
 
+## Aggregate results viewer
+
+The read-only viewer displays finished `part-*.jsonl` files from one submission directory, including subfolders. It preserves separate rows and never deduplicates or re-aggregates them. Use the directory configured when submitting the running job, rather than the whole `data/` tree.
+
+The plain table uses the standard library. The optional keyboard screen uses `prompt-toolkit`, installed only on the host. Neither mode changes the pipeline or storage format. Prepare the Python 3.11 environment described under [Local Python tests](#local-python-tests), then install the viewer extra once.
+
+Git Bash:
+
+```bash
+.venv/Scripts/python.exe -m pip install -e '.[viewer]'
+winpty .venv/Scripts/python.exe -m stream_challenge.results data/aggregates --interactive
+.venv/Scripts/python.exe -m stream_challenge.results data/aggregates --postcode SW19 --minute 2026-11-01T19:46
+```
+
+PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[viewer]"
+.\.venv\Scripts\python.exe -m stream_challenge.results data/aggregates --interactive
+```
+
+Linux/WSL uses `.venv-linux/bin/python` instead. Replace `data/aggregates` with the actual run directory. Omit `--interactive` for a plain table; `--limit 100` changes the default 50-row preview limit. `--no-colour` or `NO_COLOR` disables colours. Redirected plain output contains no ANSI codes.
+
+In the screen, Tab/Shift+Tab cycles focus. From the table, **1** edits the postcode and **2** edits the minute; blank filters mean all. Enter applies filters, arrow keys select a row, and Enter on that row shows JSON plus its source file/line. **R** refreshes committed files, Escape returns to the table, and **Q** from the table or Ctrl+C exits. Refresh is manual. If Git Bash's mintty cannot open the screen, prefix the command with `winpty` or use Windows Terminal; the plain table works without a full-screen console.
+
+Minute filters require the full UTC date and minute, for example `2026-11-01T19:46`, optionally ending in `Z`. Counts describe the selected rows, not unfinished windows or durable pipeline totals. Corrupt finished files produce an explicit error. The viewer loads the chosen directory into memory and is intended for bounded local demos.
+
 ## Browse Kafka messages
 
 Start the optional [Kafbat UI](https://github.com/kafbat/kafka-ui/releases/tag/v1.5.0). It is pinned to version 1.5.0, bound to loopback and configured read-only; dynamic configuration is disabled.
@@ -178,7 +201,7 @@ Start the optional [Kafbat UI](https://github.com/kafbat/kafka-ui/releases/tag/v
 docker compose up -d --wait --wait-timeout 120 kafka-ui
 ```
 
-Open [http://127.0.0.1:8080](http://127.0.0.1:8080), then select **local ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Topics ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ pageviews ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ Messages**. Change the **Newest** dropdown to **Live** while the producer runs. Use **Stop loading** to freeze the view, then expand a row to inspect its JSON value; switch back to **Newest** and **Refresh** to inspect the most recent retained messages. Offsets identify Kafka records; the `timestamp` inside the value is our event time in epoch seconds. Browsing messages does not remove them from Kafka or change the application's consumer offsets.
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080), then select **local ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Topics ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ pageviews ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Messages**. Change the **Newest** dropdown to **Live** while the producer runs. Use **Stop loading** to freeze the view, then expand a row to inspect its JSON value; switch back to **Newest** and **Refresh** to inspect the most recent retained messages. Offsets identify Kafka records; the `timestamp` inside the value is our event time in epoch seconds. Browsing messages does not remove them from Kafka or change the application's consumer offsets.
 
 The **Consumers** page shows `raw-archive` and, once a checkpoint commits offsets, `postcode-aggregation`. Inspect committed offsets and lag there. Flink can use explicit partition assignment without an active group member, so an empty group state alone does not mean the Flink job has stopped. Use the Flink UI for job health. Broker byte-rate charts require additional broker metrics and may show zero in this setup; use message offsets and Flink counters to demonstrate progress.
 
@@ -352,6 +375,10 @@ The final pytest result should be **1 passed**. Verified locally on Windows: 59 
 
 In Docker Desktop, temporary `flink-test-...` and `raw-test-...` containers appear. In the Flink UI, the `flink-test-...` job runs and becomes `CANCELED` during normal cleanup. The finite raw ingester exits successfully after 13 records. Test containers, files, consumer groups and the topic are removed; shared Kafka/Flink services remain running. Normal demo output is retained. Failures show assertion differences, observed counters and relevant container logs before cleanup. Run the test again without resetting Kafka or manually deleting output.
 
+## Optional Agent Forge investigation
+
+Follow the [archive incident runbook](docs/AGENT_FORGE_DEMO.md) to publish three valid synthetic events to an isolated topic and observe the raw ingester fail at a two-file limit. The healthy pipeline remains running. A local authenticated evidence service connects recorded observations to Agent Forge's planner, four read-only tool calls and assessment. The workflow stops at a recommendation; it cannot restart services or modify files. This is an operational safeguard demonstration, not a DQ defect.
+
 ## Stop or reset
 
 ```text
@@ -364,7 +391,7 @@ Enabling all profiles here also removes application and Flink containers, while 
 docker compose --profile "*" down --volumes
 ```
 
-The reset deletes this Compose project's Kafka data and Prometheus history, but not raw files, aggregate files or checkpoints under host `data/`. Restart with the commands above to recreate the topic. Use fresh Flink output/checkpoint directories for a new submission. After resetting Kafka, use a fresh archive directory rather than mixing reused offsets with an older topic's files, for example:
+The reset deletes this Compose project's Kafka data and Prometheus history, but not raw files, aggregate files or checkpoints under host `data/`. For a complete clean slate, follow the [Bash reset steps](docs/DEMO_BASH.md#8-optional-complete-reset) or [PowerShell reset steps](docs/DEMO_POWERSHELL.md#8-optional-complete-reset), which also cover removing host output and old one-off containers. Restart with the commands above to recreate the topic. Use fresh Flink output/checkpoint directories for a new submission. After resetting Kafka, use a fresh archive directory rather than mixing reused offsets with an older topic's files, for example:
 
 ```text
 docker compose run --rm raw-ingester --output-dir data/raw-next
@@ -382,4 +409,4 @@ This is a single local broker without authentication, TLS or redundancy. Only th
 
 [SPEC.md](SPEC.md) defines the requirements. [ROADMAP.md](ROADMAP.md) tracks milestone gates. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records design choices and the AI-assisted workflow. [AGENTS.md](AGENTS.md) contains actionable rules for coding agents.
 
-Prometheus/Grafana are optional and available through the monitoring profile. Agent Forge remains deferred.
+Prometheus/Grafana are optional and available through the monitoring profile. An isolated [Agent Forge investigation demo](docs/AGENT_FORGE_DEMO.md) captures a real archive-limit failure and runs read-only analysis; DQ fault injection and recovery actions remain deferred.

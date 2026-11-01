@@ -27,4 +27,4 @@
 - Do not commit, push, create or merge PRs, or change repository visibility. The engineer owns Git history.
 - Done means approved scope delivered, relevant checks passed, documentation/traceability updated and limitations reported. Documentation checks do not establish runtime correctness.
 - Report changes, checks and outstanding issues. Always give commit suggestions as a full `git commit -m "Short accurate message"` command. Do not execute it or manufacture history.
-- Agent Forge remains deferred and requires separate authorisation.
+- Agent Forge work is limited to the authorised isolated archive-limit demo and read-only investigation. DQ fault injection, live recovery actions and further integration require separate authorisation.

@@ -73,6 +73,16 @@ The following baseline is agreed and verified locally. Published compatibility i
 | Local setup | One JobManager, one TaskManager and a submission client, with parallelism 1. Shared local `data/` mount for aggregates/checkpoints, loopback Flink UI on port 8081. JVM process budgets are 1 GiB and 2 GiB; allow additional memory for Python workers, Kafka and Docker. These are not container memory quotas. |
 | Test completion and CI | Exercise an unbounded Kafka source. Observe running state and checkpoint-committed output with bounded polling. Include explicitly accounted-for later events to close earlier windows; assert the final quiet minute stays pending. A committed earlier window establishes when to inject a deliberately late event. General scenario harness/CI work remains in milestones 4 and 7. |
 
+## Reading aggregate results
+
+The optional `stream_challenge.results` command reads finished aggregate parts from one submission directory, including subdirectories. It provides exact postcode/full UTC-minute filters, a plain table and an optional keyboard screen. It preserves duplicate rows, records source file/line locations and reports corrupt finished output explicitly. It never rewrites records or combines counts from independent submissions.
+
+The plain reader uses the standard library; the optional `viewer` extra pins [prompt-toolkit 3.0.53](https://github.com/prompt-toolkit/python-prompt-toolkit/releases/tag/3.0.53) for cross-platform keyboard handling and terminal layout. This host-only extra avoids a custom raw-terminal implementation and adds no running service or pipeline dependency. The screen has editable filters, a scrollable table, selected-record details and manual refresh, with a muted charcoal palette and high-contrast selection. Colours respect terminal detection, `NO_COLOR` and `--no-colour`; non-interactive plain output has no ANSI formatting. Mintty may require `winpty` for native Windows Python; a plain preview remains available.
+
+Verification covers six reader cases (finished-file selection, nested directories, duplicate preservation, exact filters, invalid minutes and corrupt output), bringing the unit suite to 65 passing cases. A real output preview matched the existing SW19 minute count of 78. Headless keyboard checks and Windows/Git Bash terminal runs exercised filtering, row navigation/details, refresh, colours and exit. Native Linux/WSL execution remains unverified.
+
+The reader loads one chosen output tree into memory for bounded local inspection. Counts describe the selected finished rows, not unclosed windows or durable audit totals. It is a downstream file consumer, not a database, SQL engine or replacement for the independent end-to-end assertions.
+
 ## Checkpoints and event time
 
 Git Bash on Windows converts Unix-style arguments before calling native Docker. An observed submission failed because `/app/data/...` became `C:/Program Files/Git/app/data/...`, leaving checkpoint storage outside the writable mount. The Bash guide now sets `MSYS_NO_PATHCONV=1` before Docker commands. Quoting alone does not prevent conversion. Fresh submission and host-visible checkpoint/output creation were verified through Git Bash; this is separate from native Linux/WSL verification.
@@ -150,9 +160,15 @@ Broker JMX metrics, raw-ingester throughput, alerts, log collection and tested r
 
 Production improvements are not implemented or required locally. Measure peaks, skew, state, lag, file counts and disk growth before scaling. Host failure tolerance would require resilient broker/storage/checkpoint arrangements and tested restoration. Real-data use would also require privacy, retention, authentication, access control and secret-management decisions, with explicit cost review for cloud services.
 
-## Deferred incident demonstration
+## Incident investigation demonstration
 
-After a healthy tested baseline, an optional separate branch can introduce a controlled data-quality defect. Exercise a previously uncovered scenario and detect the issue through independent validation or monitoring. Agent Forge would collect safe logs, metrics and relevant source, identify a likely root cause and recommend a fix and regression test. Human approval must precede a fix branch or PR; existing agent Git restrictions still apply. No integration or fault injection is authorised now.
+The authorised initial increment is an operational archive-limit failure, not a source-code defect or DQ incident. `demos/archive_incident.py capture` starts a separate consumer with a UUID topic/group/output root and two-file limit. Three valid records produce two byte-exact archives, an `ingestion_failed` error, exit code 1 and next committed offset 2. Cleanup removes only this demo's container/topic/group, preserving evidence under `data/incidents/`. Existing ingestion and Flink execution remain running.
+
+A loopback-only authenticated service exposes four fixed recorded-evidence tools through Agent Forge's existing incident interface. It has no Docker, arbitrary-path or mutation interface. Synthetic provenance explicitly identifies replayed demo observations. Agent Forge's current planner requires all four discovery requests once; it can form hypotheses and order the checks, but does not have unrestricted tool selection. Its collector records cloud-specific checks as unavailable rather than fabricating resources. Two AI stages produce a plan and evidence-linked assessment; the workflow ends without restart, Slack or Git actions. See the [runbook](AGENT_FORGE_DEMO.md).
+
+Local verification passed the real failure scenario and authenticated service boundary. Two live investigations were run during verification, each with two AI calls and four tool reads. Review of the first report caught an overstatement about replay after Kafka cleanup; explicit cleanup/next-offset evidence corrected this in the second report. Re-submitting the second incident reused its existing run without more model calls. The current unit suite has 70 passing cases; the original healthy Flink job remains running. Agent Forge source was not modified, but normal workflow/run artifacts were added to its local database.
+
+A later DQ defect demonstration, file watcher, automatic incident detection and recovery execution remain separate work. Human approval is required before any fix branch or PR, and the engineer owns commits and pushes.
 
 ## Technical discussion and references
 
