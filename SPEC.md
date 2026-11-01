@@ -1,6 +1,6 @@
 # Specification
 
-Baseline agreed on 29 October 2026; Flink implementation authorised on 31 October 2026. Milestones 1 and 2 are reviewed; milestone 3 is implemented and locally verified, awaiting review. This file defines the required outcome. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records choices and open decisions.
+Baseline agreed on 29 October 2026; Flink implementation authorised on 31 October 2026. Milestones 1 and 2 are reviewed; milestone 3 is implemented and locally verified. A focused milestone 4 increment, concurrent raw ingestion and Flink with end-to-end reporting, was authorised and verified locally on 1 November 2026, awaiting review. This file defines the required outcome. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records choices and open decisions.
 
 ## Scope
 
@@ -77,7 +77,7 @@ The table is the requirements traceability matrix. Origin distinguishes exercise
 | O1 | Optional monitoring and alerting, using Prometheus/Grafana if selected | Brief bonus; tools chosen by project | Existing integrations and dashboards | Verify available throughput, invalid-event, output, lag, health, error, checkpoint/recovery and agreed alert signals |
 | O2 | Deferred optional Agent Forge incident investigation | Project | Isolated fault-injection demonstration | Healthy baseline, independent detection, evidence, proposed fix/regression test and human approval gate |
 
-R1-R18 are required for our proposed project scope, with their origins shown above. R18 is optional at execution time through an explicit opt-out, enabled by default. O1 and O2 do not block the core demonstration. The brief also lists security, automation and diagrams as optional enhancements. We have chosen CI automation and Mermaid diagrams as project deliverables; further security hardening and alerting remain optional. Confidentiality and secret exclusion always apply.
+R1-R18 are required for our proposed project scope, with their origins shown above. R18 is optional at execution time through an explicit opt-out, enabled by default. O1 and O2 do not block the core demonstration. A lightweight O1 increment is authorised: Flink metrics, Prometheus and a provisioned Grafana dashboard. Consumer lag through an existing Kafka exporter is also authorised. Raw-ingester exporters, alerts and recovery monitoring remain outside this increment. The brief also lists security, automation and diagrams as optional enhancements. We have chosen CI automation and Mermaid diagrams as project deliverables; further security hardening and alerting remain optional. Confidentiality and secret exclusion always apply.
 
 ## Delivery constraints
 

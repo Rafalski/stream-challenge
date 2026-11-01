@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: streaming
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    # Poll rather than relying on file notifications through Docker Desktop.
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

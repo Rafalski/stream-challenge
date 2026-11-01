@@ -33,3 +33,8 @@ rest.port: 8081
 parallelism.default: 1
 python.executable: python
 python.client.executable: python
+
+# The bundled reporter stays internal; the optional monitoring profile scrapes it.
+metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+metrics.reporter.prom.port: 9249
+metrics.reporter.prom.filterLabelValueCharacters: false

@@ -33,8 +33,8 @@ def generate_events(count: int | None, start_timestamp: int | None = None) -> It
     if count is not None and count < 1:
         raise ValueError("count must be positive")
 
-    # Keep the sample choices small enough to follow in the demo output.
-    postcodes = ("SW19", "SW1A", "M1")
+    # A 3:2:1 mix gives the live demo visibly different postcode counts.
+    postcodes = ("SW19", "SW19", "SW19", "SW1A", "SW1A", "M1")
     webpages = ("index.html", "about.html", "contact.html")
 
     for index in itertools.count():
