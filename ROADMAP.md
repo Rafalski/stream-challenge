@@ -4,7 +4,7 @@ Milestones 0-2 are reviewed. Milestone 3 is implemented and verified locally. On
 
 The same demo scope now includes a three-phase live stream, uneven postcode counts and an optional read-only Kafka browser. A 1,224-record live run, committed output, raw archival and browser inspection were verified locally. This is separate from the 13-record assertion-based end-to-end scenario; Prometheus/Grafana monitoring is a separate authorised increment below.
 
-The current documentation increment adds separate Bash/PowerShell demo guides, timing explanations and Arrange/Act/Assert comments in the existing scenario; executable test behaviour is unchanged.
+The current documentation increment adds separate Bash/PowerShell demo guides, timing explanations and Arrange/Act/Assert comments in the existing scenario; executable test behaviour is unchanged. A Git Bash checkpoint-path conversion failure was diagnosed and corrected in the shell instructions; Windows tests and direct Git Bash execution are verified separately from unverified native WSL execution.
 
 Work in order, with approval before each next milestone. Tests and documentation accompany features from the start; milestones 4 and 5 consolidate coverage and harden behaviour. Optional milestones 6 and 8 may be explicitly deferred.
 

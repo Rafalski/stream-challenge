@@ -14,7 +14,7 @@ For the main live demonstration, start raw ingestion and Flink below, open the K
 
 Run commands from the repository root. Blocks labelled `text` work in both PowerShell and Bash; shell-specific commands have separate examples. Stop after any failed command and inspect its error before continuing.
 
-For Bash on Windows, use Ubuntu in WSL 2 with [Docker Desktop WSL integration](https://docs.docker.com/desktop/features/wsl/) enabled for that distribution. Check `docker compose version` in Ubuntu before starting. The same Compose configuration and containers are used from either shell. Git Bash is not the documented Bash environment because its Windows path conversion can affect container arguments.
+For Git Bash on Windows, run `export MSYS_NO_PATHCONV=1` in each new terminal before Docker commands. Otherwise Git Bash can rewrite container paths such as `/app/data` into Windows paths, causing Flink checkpoint-directory failures. Follow the [Bash guide](docs/DEMO_BASH.md) for the complete sequence and Windows Python test commands. Ubuntu in WSL 2 is also supported by the instructions, with [Docker Desktop WSL integration](https://docs.docker.com/desktop/features/wsl/) enabled; native WSL execution remains unverified. All shells use the same Compose configuration and containers.
 
 Windows checkouts are accessible through WSL under `/mnt/c/`. For regular Linux development, prefer a checkout in the Linux filesystem outside synchronised folders, following [Docker's filesystem guidance](https://docs.docker.com/desktop/features/wsl/best-practices/). Use separate Python virtual environments for Windows and Linux.
 

@@ -75,6 +75,8 @@ The following baseline is agreed and verified locally. Published compatibility i
 
 ## Checkpoints and event time
 
+Git Bash on Windows converts Unix-style arguments before calling native Docker. An observed submission failed because `/app/data/...` became `C:/Program Files/Git/app/data/...`, leaving checkpoint storage outside the writable mount. The Bash guide now sets `MSYS_NO_PATHCONV=1` before Docker commands. Quoting alone does not prevent conversion. Fresh submission and host-visible checkpoint/output creation were verified through Git Bash; this is separate from native Linux/WSL verification.
+
 These settings serve different purposes:
 
 | Setting | Meaning in this application |

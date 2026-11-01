@@ -1,12 +1,15 @@
 # Live demo: Bash
 
-Use Linux Bash or Ubuntu in WSL 2, with Docker Desktop integration enabled. Open the repository root in the terminal. The pipeline needs no host Python installation. Stop after any failed command.
+Use Git Bash on Windows, Linux Bash, or Ubuntu in WSL 2 with Docker Desktop integration enabled. Open the repository root in the terminal. The pipeline needs no host Python installation. Stop after any failed command.
 
-Check Docker access first:
+Prepare each new terminal before running Docker commands:
 
 ```bash
+export MSYS_NO_PATHCONV=1
 docker compose version
 ```
+
+Git Bash otherwise rewrites container paths such as `/app/data` into Windows paths under `C:/Program Files/Git`, causing checkpoint-directory failures. `MSYS_NO_PATHCONV` disables that conversion in this shell; it is harmless in Linux/WSL. Quoting a path alone does not prevent conversion.
 
 If WSL reports that Docker is unavailable, enable the Ubuntu distribution under Docker Desktop **Settings → Resources → WSL Integration**, then reopen the terminal.
 
@@ -41,11 +44,15 @@ docker compose run -d --no-deps aggregation --output-dir "$aggregate_dir" --chec
 
 Wait until all three Flink boxes show running tasks. The separate `raw-ingester` container archives originals; it is not another Flink job.
 
+If submission fails with a checkpoint path containing `C:/Program Files/Git`, run `export MSYS_NO_PATHCONV=1` and repeat the fresh-directory submission block above. Keep earlier files; no Kafka reset is needed. To inspect a failed submission, use the Flink job's **Exceptions** tab.
+
 ## 3. Open the live views
 
 - [Grafana](http://127.0.0.1:3000/d/streaming-demo): leave `postcode-pageviews` and Job ID **All** selected. Watch throughput, checkpoints and consumer lag.
 - [Kafka browser](http://127.0.0.1:8080): select **local → Topics → pageviews → Messages → Live**. Expand a record to inspect its four fields.
 - [Flink](http://127.0.0.1:8081): inspect the running job and its checkpoint history.
+
+A fresh submission replays retained Kafka input. Before producing demo traffic, let `postcode-aggregation` lag settle to zero and confirm completed checkpoints are increasing. Older output minutes during replay are expected.
 
 ## 4. Produce low, busy and medium traffic
 
@@ -72,7 +79,15 @@ Each JSONL row contains `postcode`, `window_start` in UTC and `pageview_count`. 
 
 ## 6. Optional automated checks
 
-Native tests require Linux Python 3.11 and its venv support. Windows `.venv\Scripts\python.exe` commands are not Linux Bash commands. Prepare a separate environment once:
+Git Bash uses Windows Python 3.11. Prepare a Windows environment once, using forward slashes when calling its executables from Bash:
+
+```bash
+py -3.11 -m venv .venv
+.venv/Scripts/python.exe -m pip install -e '.[test]'
+.venv/Scripts/python.exe -m pytest
+```
+
+Linux/WSL uses Linux Python 3.11 and its venv support, with a separate environment:
 
 ```bash
 python3.11 -m venv .venv-linux
@@ -82,7 +97,13 @@ python3.11 -m venv .venv-linux
 
 If `python3.11` is missing, resolve that host prerequisite first. Docker demos still work without it. Native WSL test execution has not been verified.
 
-For the real end-to-end scenario, cancel the demo job in Flink and wait for **CANCELED** and an available task slot. Leave the shared services running:
+For the real end-to-end scenario, cancel the demo job in Flink and wait for **CANCELED** and an available task slot. Leave the shared services running. Git Bash:
+
+```bash
+.venv/Scripts/python.exe -m pytest -m flink -v -s
+```
+
+Linux/WSL:
 
 ```bash
 .venv-linux/bin/python -m pytest -m flink -v -s
