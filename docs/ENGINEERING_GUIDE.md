@@ -168,6 +168,8 @@ A loopback-only authenticated service exposes four fixed recorded-evidence tools
 
 Local verification passed the real failure scenario and authenticated service boundary. Two live investigations were run during verification, each with two AI calls and four tool reads. Review of the first report caught an overstatement about replay after Kafka cleanup; explicit cleanup/next-offset evidence corrected this in the second report. Re-submitting the second incident reused its existing run without more model calls. The current unit suite has 70 passing cases; the original healthy Flink job remains running. Agent Forge source was not modified, but normal workflow/run artifacts were added to its local database.
 
+An enhanced copy adds a classification stage and first-match Condition before the existing planner/collector/assessment chain. A support-review classification skips tools; the investigation route keeps four allowlisted reads. Both routes converge on a fixed, single-selection User Choice assigned to administrators with a required comment. Its options are manual follow-up proposals, not execution authority; a literal summary records the actual selection alongside `action_executed=false`. The copy allows three AI calls, while the original remains capped at two. Both initial paths and all four human responses passed real-engine checks using fake AI in temporary SQLite; no paid enhanced run was performed.
+
 A later DQ defect demonstration, file watcher, automatic incident detection and recovery execution remain separate work. Human approval is required before any fix branch or PR, and the engineer owns commits and pushes.
 
 ## Technical discussion and references

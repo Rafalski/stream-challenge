@@ -53,10 +53,17 @@ def with_incident_preset(workflow, payload):
     return workflow
 
 
-def prepared_workflow(payload):
+def prepared_workflow(payload, enhanced=False):
     """Keep the reusable template generic and bind one captured incident per copy."""
-    template = json.loads((ROOT / "demos" / "archive-investigation.json").read_text())
-    return with_incident_preset(template, payload)
+    filename = "archive-investigation-gated.json" if enhanced else "archive-investigation.json"
+    template = json.loads((ROOT / "demos" / filename).read_text())
+    workflow = with_incident_preset(template, payload)
+    if enhanced:
+        support = copy.deepcopy(payload)
+        support["operator_request"] = "support_review"
+        workflow["configuration"]["payload_presets"].append({
+            "id": "direct_support", "name": "Same incident: request direct support review", "content": support})
+    return workflow
 
 
 def capture(bootstrap):
@@ -140,6 +147,7 @@ def capture(bootstrap):
         save(folder / "incident.json", payload)
         save(folder / "evidence.json", evidence)
         save(folder / "workflow.json", prepared_workflow(payload))
+        save(folder / "workflow-gated.json", prepared_workflow(payload, enhanced=True))
         print(f"PASS: 3 published, 2 byte-exact archives, offset 2 uncommitted, exit code 1\nIncident: {folder / 'incident.json'}")
         return folder
     finally:
@@ -211,7 +219,7 @@ def serve(folder, port):
         server.serve_forever()
 
 
-def submit(folder, api):
+def submit(folder, api, enhanced=False):
     """Invoke the saved two-call workflow once; retries reuse the same identity."""
     if api not in ("http://127.0.0.1:8000", "http://localhost:8000"):
         raise ValueError("this demo targets local Agent Forge on port 8000 only")
@@ -229,23 +237,26 @@ def submit(folder, api):
         with urlopen(Request(api + path, data=data, headers=headers), timeout=120) as response:
             return json.load(response)
 
-    receipt = folder / "submission.json"
+    suffix = "-gated" if enhanced else ""
+    receipt = folder / f"submission{suffix}.json"
     if receipt.exists():
         existing = json.loads(receipt.read_text())
         result = request("/api/runs/" + existing["run_id"])
     else:
-        workflow = prepared_workflow(payload)
-        save(folder / "workflow.json", workflow)
-        saved = request("/api/workflows", workflow, identity + "-workflow")
+        workflow = prepared_workflow(payload, enhanced)
+        save(folder / f"workflow{suffix}.json", workflow)
+        saved = request("/api/workflows", workflow, identity + suffix + "-workflow")
         result = request(f"/api/workflows/{saved['id']}/runs",
-                         {"version_number": 1, "input": payload}, identity + "-investigation")
+                         {"version_number": 1, "input": payload}, identity + suffix + "-investigation")
         save(receipt, {"api": api, "workflow_id": saved["id"], "run_id": result["id"]})
     # Persist a compact report, not the entire API run with unrelated metadata.
-    save(folder / "investigation.json", {"run_id": result["id"], "status": result["status"],
+    save(folder / f"investigation{suffix}.json", {"run_id": result["id"], "status": result["status"],
          "result": result.get("result"), "ai_calls": result.get("ai_calls", []),
-         "tool_calls": result.get("tool_calls", [])})
-    print(f"Agent Forge run {result['id']}: {result['status']}\nReport: {folder / 'investigation.json'}")
-    if result["status"] != "succeeded":
+         "tool_calls": result.get("tool_calls", []), "waiting_task_id": result.get("waiting_task_id")})
+    print(f"Agent Forge run {result['id']}: {result['status']}\nReport: {folder / ('investigation' + suffix + '.json')}")
+    if result["status"] == "waiting":
+        print("Open Agent Forge Tasks to review the proposed next step; no recovery action is enabled.")
+    elif result["status"] != "succeeded":
         raise RuntimeError("investigation did not succeed; inspect Agent Forge run history before retrying")
 
 
@@ -261,6 +272,7 @@ def main():
     submit_parser = commands.add_parser("submit")
     submit_parser.add_argument("folder", type=Path)
     submit_parser.add_argument("--api", default="http://127.0.0.1:8000")
+    submit_parser.add_argument("--enhanced", action="store_true", help="use the separate triage and human-review copy")
     args = parser.parse_args()
     try:
         if args.command == "capture":
@@ -268,7 +280,7 @@ def main():
         elif args.command == "serve":
             serve(args.folder, args.port)
         else:
-            submit(args.folder, args.api)
+            submit(args.folder, args.api, args.enhanced)
     except KeyboardInterrupt:
         pass
 

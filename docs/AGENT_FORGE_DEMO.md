@@ -41,7 +41,7 @@ export API_ACCESS_TOKEN="$(.venv/Scripts/python.exe -c 'import secrets; print(se
 export AGENTFORGE_API_TOKEN="$API_ACCESS_TOKEN"
 export INCIDENT_TOOLS_URL=http://127.0.0.1:8011
 export AI_MAX_CALLS_PER_STAGE=1
-export AI_MAX_CALLS_PER_RUN=2
+export AI_MAX_CALLS_PER_RUN=3
 export AI_MAX_OUTPUT_TOKENS=2048
 export CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 export SQLITE_PATH=../agentforge/.local/agentforge.db
@@ -114,6 +114,41 @@ Opening the designer does not reuse a previous run's input automatically. Saved 
 In Run history, select the returned run and show the planner's hypotheses, recorded tool calls, evidence references, final recommendation and model usage. A successful workflow means the investigation ran, not that the archiver recovered.
 
 Review the report critically. The first verification run correctly identified the file limit but overstated whether the cleaned-up Kafka record remained available. The evidence now explicitly reports cleanup and next-offset semantics. AI recommendations still require human review.
+
+## Optional enhanced copy: triage and human review
+
+The original **Pageview archive investigation** remains the simple two-call demonstration. **Pageview archive investigation - review gates** is a separate workflow, not a replacement or edit to its history. Its template is `demos/archive-investigation-gated.json`; each new capture also writes a prepared `workflow-gated.json` with incident presets.
+
+```mermaid
+flowchart LR
+    T[AI triage] --> C{Needs support review?}
+    C -->|Yes| H[Record handover proposal]
+    C -->|No| P[AI evidence plan]
+    P --> E[Four read-only evidence tools]
+    E --> A[AI assessment]
+    H --> U[Human User Choice]
+    A --> U
+    U --> R[Record decision and comment]
+    R --> Z[End; no action executed]
+```
+
+1. Open **Pageview archive investigation - review gates**, version 1. Select **Captured archive file-limit failure** for the evidence route. The first AI stage classifies the incident; the following Condition uses its typed `needs_review` boolean.
+2. Run. The evidence route uses at most three AI calls and four recorded tool reads. The existing planner still requires all four discovery tools, with tool/resource checks enforced by Agent Forge.
+3. The run pauses at **Review the archive incident and choose the next step**. Open **Tasks**, inspect the AI output/evidence, select one option and enter a comment.
+4. Choose to close as expected safeguard behaviour, request archive-policy review, request a fresh isolated rerun plan, or request support handover. Submit the choice. The pinned run resumes, records the selection/comment and ends without performing that proposal.
+5. To show the early handover route, select preset **Same incident: request direct support review**. This changes only the operator's review request, not the recorded incident or logs. It uses one AI call and skips evidence tools before the human gate.
+
+User Choice fits these distinct outcomes better than a yes/no restart approval. The original temporary topic was deleted, so a real restart/replay is not a valid immediate action. A fresh isolated run must be planned separately. The final summary explicitly records that no restart, notification, budget change or other recovery action occurred.
+
+The local API must allow at least three AI calls per run for the enhanced evidence route. The setup above allows three; the simple workflow retains its own two-call cap. If changing an existing local API from two to three, restart that API with the new setting; do not change Azure or the streaming stack. A changed local signing token requires signing in again.
+
+The CLI alternative uses a separate workflow/run receipt, keeping the simple submission independent:
+
+```bash
+.venv/Scripts/python.exe demos/archive_incident.py submit "$incident_dir" --enhanced
+```
+
+A `waiting` response is expected at the human gate. Complete it in Tasks, then repeat the same submit command to inspect the existing run. That repeat never creates another investigation. The enhanced copy was validated against the real engine using fake AI in a temporary database: both initial routes and all four choices pause, require a comment, resume once and keep mutations disabled. No paid enhanced run was started during those checks.
 
 ## 5. Stop only the investigation services
 

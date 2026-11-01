@@ -2,7 +2,7 @@
 
 import pytest
 
-from demos.archive_incident import evidence_result, with_incident_preset
+from demos.archive_incident import evidence_result, prepared_workflow, with_incident_preset
 
 
 @pytest.fixture
@@ -38,6 +38,23 @@ def test_ui_preset_preserves_input_and_existing_configuration():
     assert config["payload_presets"][-1]["content"] == payload
     assert config["description"] == "Keep this" and len(config["payload_presets"]) == 2
     assert len(original["configuration"]["payload_presets"]) == 1
+
+
+def test_enhanced_copy_has_a_human_gate_without_recovery_actions():
+    """Triage and review must not turn a proposal into a restart operation."""
+    payload = {"incident": {"id": "incident-a"}, "available_tools": []}
+    simple = prepared_workflow(payload)
+    enhanced = prepared_workflow(payload, enhanced=True)
+    assert simple["definition"]["max_ai_calls"] == 2
+    assert enhanced["definition"]["max_ai_calls"] == 3
+    choices = [stage for stage in enhanced["definition"]["stages"] if stage["kind"] == "choice"]
+    assert len(choices) == 1 and choices[0]["require_comment"] is True
+    assert choices[0]["allow_multiple"] is False
+    assert all(stage.get("action", {}).get("name") in (None, "set_fields", "collect_incident_evidence")
+               for stage in enhanced["definition"]["stages"])
+    support = enhanced["configuration"]["payload_presets"][-1]["content"]
+    assert support["incident"] == payload["incident"]
+    assert support["operator_request"] == "support_review"
 
 
 @pytest.mark.parametrize("change", ["tool", "incident", "run", "extra_argument"])
