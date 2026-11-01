@@ -6,7 +6,13 @@ A local Python streaming exercise: generate website pageviews, publish them to K
 
 Kafka, the Python producer, independent raw ingester and PyFlink aggregation are implemented and verified locally. Milestone 3 awaits engineer review. CI is not implemented yet.
 
-Prerequisites: Docker with a running Linux-container engine, a Compose plugin supporting `up --wait` and `wait`, and host ports 9092 and 8081 available. On Windows, use Docker Desktop in Linux-container mode. No host Python, Java or Kafka installation is needed to run through Docker. Local tests use a Python virtual environment. Run commands from the repository root; Python setup and file inspection examples below use PowerShell.
+Prerequisites: Docker with a running Linux-container engine, a Compose plugin supporting `up --wait` and `wait`, and host ports 9092 and 8081 available. On Windows, use Docker Desktop in Linux-container mode. No host Python, Java or Kafka installation is needed to run through Docker. Local tests use a Python virtual environment.
+
+Run commands from the repository root. Blocks labelled `text` work in both PowerShell and Bash; shell-specific commands have separate examples. Stop after any failed command and inspect its error before continuing.
+
+For Bash on Windows, use Ubuntu in WSL 2 with [Docker Desktop WSL integration](https://docs.docker.com/desktop/features/wsl/) enabled for that distribution. Check `docker compose version` in Ubuntu before starting. The same Compose configuration and containers are used from either shell. Git Bash is not the documented Bash environment because its Windows path conversion can affect container arguments.
+
+The current Windows checkout can be accessed through WSL under `/mnt/c/`. There is no need to move it for this walkthrough. For regular Linux development, prefer a checkout in the Linux filesystem outside synchronised folders, following [Docker's filesystem guidance](https://docs.docker.com/desktop/features/wsl/best-practices/). Moving the checkout is a separate setup task. Do not share a Python virtual environment between Windows and Linux.
 
 ## Start Kafka
 
@@ -22,13 +28,19 @@ Kafka is reachable at `127.0.0.1:9092` from the host and `kafka:29092` from Comp
 
 ## Produce and archive events
 
-Create the output directory before starting the ingester. In PowerShell:
+Create the output directory before starting the ingester. PowerShell:
 
 ```powershell
 New-Item -ItemType Directory -Force data | Out-Null
 ```
 
-On Linux, create `data/` using your host account and ensure it is writable by the image's UID 1000. Host permissions on other platforms have not been verified.
+Bash:
+
+```bash
+mkdir -p data
+```
+
+On the Linux filesystem, ensure `data/` is writable by the image's UID 1000. Host permissions on other platforms have not been verified.
 
 ```text
 docker compose up -d --build raw-ingester
@@ -55,6 +67,13 @@ Get-ChildItem data/raw/pageviews/0/*.bin
 Get-Content data/raw/pageviews/0/0.bin
 ```
 
+Bash:
+
+```bash
+find data/raw/pageviews/0 -maxdepth 1 -type f -name '*.bin'
+cat data/raw/pageviews/0/0.bin
+```
+
 Wait for the corresponding `record_archived` log before expecting a file. The first event in a fresh topic is offset 0.
 
 ## Aggregate pageviews
@@ -69,12 +88,24 @@ docker compose logs --tail 50 aggregation
 
 Open the [Flink UI](http://127.0.0.1:8081) and check that `postcode-pageviews` is **RUNNING**. Container startup alone does not establish that the job is running. Run one aggregation job at a time; the local TaskManager has one slot.
 
+In Docker Desktop, expand the `stream-challenge` project. Expect `kafka`, `raw-ingester`, `jobmanager`, `taskmanager` and the `aggregation` submission client to be running, with `kafka-init` exited successfully. Kafka and both Flink managers have health checks; the other running containers do not. In the Flink UI, expect one registered TaskManager and one total task slot. Open the job and check that its tasks are running, not just the overall job state. Job startup can take a minute or more.
+
+If submission fails with a non-empty-directory message, use the fresh-directory rerun command below. Do not delete earlier output or reset Kafka just to repeat the demonstration.
+
 With the raw ingester also running, generate current-time traffic for a short demonstration:
 
 ```text
 docker compose run --rm producer --continuous --interval-range 0.2 1.5 --max-duration 150
 docker compose logs --tail 50 taskmanager
 ```
+
+Keep a second terminal at the repository root for live logs while the producer runs:
+
+```text
+docker compose logs -f --tail 20 raw-ingester taskmanager
+```
+
+Expect `record_published` in the producer, `record_archived` in the ingester and eventually `aggregate_emitted` in the TaskManager logs. Ctrl+C in the log-following terminal stops viewing logs, not the services. The one-off producer container disappears after its bounded run because `--rm` is set.
 
 Windows finish as event time advances beyond the minute plus the five-second disorder allowance. Completed files become visible after a successful ten-second checkpoint, so output is not immediate. If traffic stops, the final minute stays open until later valid events advance event time. A checkpoint alone does not close that window.
 
@@ -84,7 +115,15 @@ Inspect completed output in PowerShell:
 Get-ChildItem data/aggregates/part-*.jsonl | Get-Content
 ```
 
+Bash:
+
+```bash
+find data/aggregates -maxdepth 1 -type f -name 'part-*.jsonl' -exec cat {} +
+```
+
 Each JSON line contains `postcode`, UTC `window_start` and `pageview_count`. Ignore hidden in-progress files. Flink writes multiple aggregates per part file and stores checkpoints separately in `data/checkpoints`. The UI exposes checkpoint status, application counters (`valid_events`, `invalid_events`, `late_events`) and the file writer's `numRecordsIn` for aggregate output. An `aggregate_emitted` log means computed, not yet committed to a readable file.
+
+During the normal demo, `valid_events` should rise and completed checkpoints should continue increasing. Inspect operator metrics for validation, late diagnostics and the file writer. Current-time sample traffic should normally have no invalid events. The job replays retained Kafka input too, so earlier traffic can affect counts and late exclusions. Compare exact counts using the isolated automated scenario below, rather than assuming the manual demo starts from an empty topic. Checkpoint files are Flink's internal state, not pageview results.
 
 Invalid records and arrivals for closed windows are excluded with diagnostic reasons; raw ingestion still preserves their bytes. See the [agreed policies](docs/ENGINEERING_GUIDE.md#technical-decisions). Flink's Java runtime logs keep their own format; Python application log settings remain selectable.
 
@@ -140,7 +179,7 @@ docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server k
 docker compose run --rm kafka-smoke-test
 ```
 
-Expect `kafka` to be healthy, `kafka-init` to have exited with code 0, and the topic description to show one partition and one replica. The smoke test creates a unique temporary topic, publishes the sample JSON, checks the consumed value and deletes its topic on exit. Look for `PASS` and a successful command exit. This tests real Kafka, not the future streaming application.
+Expect `kafka` to be healthy, `kafka-init` to have exited with code 0, and the topic description to show one partition and one replica. The smoke test creates a unique temporary topic, publishes the sample JSON, checks the consumed value and deletes its topic on exit. Look for `PASS` and a successful command exit. This checks Kafka round trips; the Flink scenario below checks aggregation.
 
 For startup diagnostics:
 
@@ -152,11 +191,23 @@ docker compose logs --tail 100 kafka kafka-init
 
 Use Python 3.11, which is also used by the application image:
 
+PowerShell (Windows Python):
+
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[test]"
 .\.venv\Scripts\python.exe -m pytest
 ```
+
+Bash (Linux Python 3.11 with virtual-environment support installed):
+
+```bash
+python3.11 -m venv .venv-linux
+.venv-linux/bin/python -m pip install -e '.[test]'
+.venv-linux/bin/python -m pytest
+```
+
+The environments have different names so both can coexist in a Windows checkout accessed through WSL. Neither requires activation. A missing `python3.11` or `venv` module is a host prerequisite to resolve before running native Bash tests; it does not prevent the Docker demonstration. Native Linux test execution remains unverified until run in that environment.
 
 The default run covers core unit tests without Docker or PyFlink. With Kafka running, run its integration checks locally:
 
@@ -164,11 +215,25 @@ The default run covers core unit tests without Docker or PyFlink. With Kafka run
 .\.venv\Scripts\python.exe -m pytest -m "integration and not flink"
 ```
 
+Bash:
+
+```bash
+.venv-linux/bin/python -m pytest -m 'integration and not flink'
+```
+
 With the Flink cluster healthy and no demo aggregation job occupying its slot, select the streaming scenario:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -m flink -v
 ```
+
+Bash:
+
+```bash
+.venv-linux/bin/python -m pytest -m flink -v
+```
+
+Before the Flink test, cancel any manual demo job in the Flink UI and wait until it is `CANCELED` and the slot is available. Stopping only the submission client is not proof that the job has stopped. During the test, a job named `flink-test-...` appears, produces checked results, then becomes `CANCELED` during cleanup. Expect 59 passing unit cases, four Kafka checks and one Flink scenario with the current suite. The scenario can take several minutes on a cold runtime; it uses observable deadlines rather than a fixed sleep.
 
 Integration checks create isolated topics, groups and directories. The Flink scenario exercises the real continuous job, compares literal expected postcode/minute counts, verifies invalid and late outcomes, preserves raw bytes and observes checkpoint-committed files. It also checks that a quiet final minute remains pending. Its job and test resources are cleaned up; the shared Kafka/Flink services remain running. The broader scenario harness is milestone 4 work.
 
