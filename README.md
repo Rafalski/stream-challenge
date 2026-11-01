@@ -4,6 +4,8 @@ A local Python streaming exercise: generate website pageviews, publish them to K
 
 ## Start here
 
+For a short walkthrough, use the [Bash demo guide](docs/DEMO_BASH.md) or [PowerShell demo guide](docs/DEMO_POWERSHELL.md). Each includes startup, live traffic, output inspection, optional tests and shutdown. [Checkpoints and event time](docs/ENGINEERING_GUIDE.md#checkpoints-and-event-time) explains the timing settings.
+
 The pipeline and concurrent end-to-end scenario are implemented and verified locally. Optional Kafka browsing and a [provisioned Grafana dashboard](#optional-live-dashboard) support the live demonstration. CI is not implemented yet; milestone review status is in the roadmap.
 
 Prerequisites: Docker with a running Linux-container engine, a Compose plugin supporting `up --wait` and `wait`, and host ports 9092 and 8081 available. On Windows, use Docker Desktop in Linux-container mode. No host Python, Java or Kafka installation is needed to run through Docker. Local tests use a Python virtual environment.
@@ -14,7 +16,7 @@ Run commands from the repository root. Blocks labelled `text` work in both Power
 
 For Bash on Windows, use Ubuntu in WSL 2 with [Docker Desktop WSL integration](https://docs.docker.com/desktop/features/wsl/) enabled for that distribution. Check `docker compose version` in Ubuntu before starting. The same Compose configuration and containers are used from either shell. Git Bash is not the documented Bash environment because its Windows path conversion can affect container arguments.
 
-The current Windows checkout can be accessed through WSL under `/mnt/c/`. There is no need to move it for this walkthrough. For regular Linux development, prefer a checkout in the Linux filesystem outside synchronised folders, following [Docker's filesystem guidance](https://docs.docker.com/desktop/features/wsl/best-practices/). Moving the checkout is a separate setup task. Do not share a Python virtual environment between Windows and Linux.
+Windows checkouts are accessible through WSL under `/mnt/c/`. For regular Linux development, prefer a checkout in the Linux filesystem outside synchronised folders, following [Docker's filesystem guidance](https://docs.docker.com/desktop/features/wsl/best-practices/). Use separate Python virtual environments for Windows and Linux.
 
 ## Start Kafka
 
@@ -94,11 +96,11 @@ In Docker Desktop, expand the `stream-challenge` project. Expect `kafka`, `raw-i
 
 If submission fails with a non-empty-directory message, use the fresh-directory rerun command below. Do not delete earlier output or reset Kafka just to repeat the demonstration.
 
-To repeat the demo while a job is already running, keep that job and the raw ingester running and repeat only the producer commands below. Do not submit another Flink job. Select its Job ID in Grafana and inspect the output directory used when it was submitted; a fresh-directory rerun does not write into `data/aggregates`. Totals include earlier traffic and replay, so watch the changes during this run.
+To repeat the demo, leave the existing Flink job and raw ingester running and repeat the producer commands below. Grafana defaults to `postcode-pageviews`; no Job ID is required. Inspect the output directory configured when submitting the job. A fresh-directory rerun does not write into `data/aggregates`. Counters include earlier traffic and replay.
 
-Before starting the producer, open the three views and select the current job in Grafana:
+Before starting the producer, open these views:
 
-| View | Watch | Explain |
+| View | Watch | Interpretation |
 | --- | --- | --- |
 | [Grafana](http://127.0.0.1:3000/d/streaming-demo) | Throughput, accepted records, DQ, output, checkpoints and consumer lag | The busy phase increases rate; totals include earlier input. Lag compares broker and committed offsets, while output waits for event-time progress and checkpoints. |
 | [Kafka browser](http://127.0.0.1:8080) | `local → Topics → pageviews → Messages`, then **Live** | Inspect the original four-field JSON and increasing offsets. **Stop loading** freezes inspection without stopping the producer. |
@@ -200,9 +202,15 @@ With the Flink cluster running, start monitoring. These commands work in PowerSh
 docker compose --profile monitoring up -d --wait --wait-timeout 120 kafka-exporter prometheus grafana
 ```
 
-Open [Grafana](http://127.0.0.1:3000/d/streaming-demo) for the **Streaming demo** dashboard. No login or manual import is needed. Select the current Flink **Job ID** and run the three traffic phases above. Allow a few scrapes for graphs to appear; they refresh every five seconds. Expect faster processing during the busy phase, aggregate output in minute-sized bursts, and completed checkpoints roughly every ten seconds. Startup can register failed checkpoint triggers while Python tasks initialise; check whether that count keeps rising after all tasks run, using the Flink UI and logs for the cause. The final quiet minute still remains open.
+Open the [Streaming demo dashboard](http://127.0.0.1:3000/d/streaming-demo). No login or manual import is required. **Flink job** defaults to `postcode-pageviews` and **Job ID (optional)** defaults to **All**. Run the three traffic phases above; graphs refresh every five seconds and may take a few scrapes to populate.
 
-Panels cover reporter availability, running jobs, registered workers, accepted/invalid/late records, processing rate, aggregate rows reaching the writer and checkpoint health. Aggregate metrics are not proof of committed file contents; inspect `part-*.jsonl` or run the end-to-end test for that. Totals apply to the selected job attempt, not a durable audit history. Missing DQ counters display zero because PyFlink may only expose them after use; check availability and job health alongside them.
+The producer publishes to the `pageviews` topic. Repeating a producer run feeds the existing Flink job; it does not create another Flink submission. The raw ingester runs separately using consumer group `raw-archive`, while Flink uses `postcode-aggregation`.
+
+Use the Job ID dropdown to investigate a particular Flink submission, then select **All** to return to the default view. Flink processing panels filter by job name and optional Job ID. Cluster health panels cover the whole local cluster. Kafka lag remains scoped to topic `pageviews` and its two consumer groups, independently of either Flink selector. Existing bookmarked URLs containing `var-job_id` retain that filter; use the dashboard link above to open the default view.
+
+Expect higher throughput during the busy phase, aggregate output as minute windows close, and completed checkpoints roughly every ten seconds. Startup may register failed checkpoint triggers while Python tasks initialise. If failures continue after all tasks are running, inspect the Flink UI and logs. The final quiet minute remains open until later events advance the watermark.
+
+Panels cover reporter availability, running jobs, registered workers, accepted/invalid/late records, processing rate, aggregate rows reaching the writer and checkpoint health. Verify committed output in `part-*.jsonl` or with the end-to-end test. Keep one aggregation job running locally. With **All** selected, record counters cover matching live submissions and can reset when submissions change; they are not a durable audit history. Missing DQ counters display zero because PyFlink may only expose them after use; check availability and job health alongside them.
 
 [Prometheus targets](http://127.0.0.1:9090/targets) should show both Flink managers and the Kafka exporter **UP**. The dashboard keeps the two Flink reporter targets and Kafka exporter availability separate. A reachable reporter does not mean a job is running. If upgrading an already running cluster to this configuration, cancel its job in the Flink UI, stop the `aggregation` client, restart `jobmanager` and `taskmanager`, and submit a new job using fresh output/checkpoint directories as described above. No checkpoint restoration is implied.
 

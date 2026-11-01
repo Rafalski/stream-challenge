@@ -63,7 +63,13 @@ def remove_readonly(function, path, error):
 
 
 def test_continuous_windows_dq_lateness_and_raw_preservation(kafka_topic):
-    """Known inputs produce exact counts and leave the quiet final minute open."""
+    """Arrange isolated consumers, act with known input, assert real file output.
+
+    Two act/assert rounds make lateness deterministic: first prove a minute has
+    closed, then publish an event for that minute. Finally check DQ, raw bytes
+    and the quiet final window. Cleanup runs even when an assertion fails.
+    """
+    # Arrange: check the shared cluster and reserve names for this scenario.
     try:
         overview = rest("overview")
     except OSError as error:
@@ -109,7 +115,8 @@ def test_continuous_windows_dq_lateness_and_raw_preservation(kafka_topic):
         return True
 
     try:
-        # Start with invalids too: none may poison the event-time watermark.
+        # Arrange: five valid visits and five invalid payloads, then two later phases.
+        # Invalid timestamps must never move the watermark. Expected rows stay literal.
         initial = [event(1), event(59), event(58), event(0, "M1"), event(60),
                    b"{bad JSON", b"\xff", b"", None,
                    event(10).replace(b"1611662650", b"9999999999")]
@@ -117,6 +124,7 @@ def test_continuous_windows_dq_lateness_and_raw_preservation(kafka_topic):
         final = [event(20), event(126)]
         payloads = initial + progress + final
 
+        # Act: start both real applications and wait until they can consume input.
         print(f"\nE2E: starting Flink for isolated topic {kafka_topic.topic}", flush=True)
         containers.append(container)
         docker("compose", "run", "-d", "--no-deps", "--name", container,
@@ -159,6 +167,7 @@ def test_continuous_windows_dq_lateness_and_raw_preservation(kafka_topic):
             return any(entry.get("event") == "ingestion_started" for entry in entries)
 
         wait_for("raw ingester readiness", raw_ready, 30)
+        # Act, round 1: the 66-second event advances progress beyond the first minute.
         print("E2E: raw ingestion and Flink are ready; publishing 11 records", flush=True)
         publish_payloads(kafka_topic.topic, initial + progress)
         first = [window("SW19", "04", 3), window("M1", "04", 1)]
@@ -169,6 +178,7 @@ def test_continuous_windows_dq_lateness_and_raw_preservation(kafka_topic):
             records = completed_records(output)
             return records if len(records) >= 2 else None
 
+        # Assert, round 1: exact first-minute counts and unchanged raw payloads.
         records = wait_for("committed first minute", first_window)
         assert sorted(records, key=lambda row: row["postcode"]) == sorted(first, key=lambda row: row["postcode"])
         assert rest(f"jobs/{job_id}/checkpoints")["counts"]["completed"] > 0
@@ -176,7 +186,8 @@ def test_continuous_windows_dq_lateness_and_raw_preservation(kafka_topic):
         assert running(), "Flink must still be running while raw output is checked"
         print("E2E: first minute committed and 11 raw payloads verified while Flink runs", flush=True)
 
-        # The first file proves the watermark passed the old minute. Now send a late record.
+        # Act, round 2: the first file proves closure, so the 20-second event is late.
+        # The 126-second event closes the second minute and stays in the third.
         print("E2E: publishing one late record and one event to advance the watermark", flush=True)
         publish_payloads(kafka_topic.topic, final)
         expected = first + [window("SW19", "05", 1), window("M1", "05", 1)]
@@ -187,6 +198,7 @@ def test_continuous_windows_dq_lateness_and_raw_preservation(kafka_topic):
             records = completed_records(output)
             return records if len(records) >= 4 else None
 
+        # Assert, round 2: four final rows, then independent DQ and archive checks.
         actual = wait_for("committed second minute", second_window)
         sort_key = lambda row: (row["window_start"], row["postcode"])
         assert sorted(actual, key=sort_key) == sorted(expected, key=sort_key)
@@ -253,6 +265,7 @@ def test_continuous_windows_dq_lateness_and_raw_preservation(kafka_topic):
         print(docker("compose", "logs", "--tail", "150", "taskmanager", check=False))
         raise
     finally:
+        # Cleanup: remove only this scenario's job, containers and files.
         try:
             current = job() if job_id is None else {"jid": job_id}
             if current is not None:
