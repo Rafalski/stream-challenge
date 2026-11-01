@@ -2,7 +2,7 @@
 
 import pytest
 
-from demos.archive_incident import evidence_result
+from demos.archive_incident import evidence_result, with_incident_preset
 
 
 @pytest.fixture
@@ -24,6 +24,20 @@ def test_recorded_read_has_explicit_demo_provenance(snapshot):
     assert result["synthetic"] is True
     assert result["data"]["archived_records"] == 2
     assert result["data"]["provenance"] == "recorded isolated demo evidence"
+
+
+def test_ui_preset_preserves_input_and_existing_configuration():
+    """The designer gets the incident without changing the original workflow."""
+    original = {"configuration": {"description": "Keep this", "payload_presets": [
+        {"id": "other", "name": "Other", "content": {}}]}}
+    payload = {"incident": {"id": "incident-a"}, "available_tools": []}
+    prepared = with_incident_preset(original, payload)
+    repeated = with_incident_preset(prepared, payload)
+    config = repeated["configuration"]
+    assert config["default_payload_preset_id"] == "archive_failure"
+    assert config["payload_presets"][-1]["content"] == payload
+    assert config["description"] == "Keep this" and len(config["payload_presets"]) == 2
+    assert len(original["configuration"]["payload_presets"]) == 1
 
 
 @pytest.mark.parametrize("change", ["tool", "incident", "run", "extra_argument"])

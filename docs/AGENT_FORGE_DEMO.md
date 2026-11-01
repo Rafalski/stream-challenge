@@ -27,7 +27,7 @@ Expect `PASS: 3 published, 2 byte-exact archives, offset 2 uncommitted, exit cod
 incident_dir=data/incidents/archive-limit-REPLACE_WITH_PRINTED_ID
 ```
 
-The capture preserves `incident.json`, `evidence.json` and the two raw files. It removes only its generated container, topic and group. Next committed offset 2 means offsets 0 and 1 were committed; record 2 was blocked. After cleanup, that temporary Kafka record is no longer available for replay. This is historical evidence, not a live recovery target.
+The capture preserves `incident.json`, `evidence.json`, a prepared `workflow.json` with the incident selected as its default trigger preset, and the two raw files. It removes only its generated container, topic and group. Next committed offset 2 means offsets 0 and 1 were committed; record 2 was blocked. After cleanup, that temporary Kafka record is no longer available for replay. This is historical evidence, not a live recovery target.
 
 ## 2. Connect the local evidence service
 
@@ -68,7 +68,9 @@ api_pid=$!
 
 Wait for `Application startup complete` in `api-server.log`. The evidence service listens only on loopback port 8011. It reads one fixed snapshot loaded at startup, permits only matching incident/job arguments and rejects unauthenticated requests or unsupported tools. It has no shell, Docker, arbitrary-file or mutation endpoint.
 
-## 3. Submit the investigation
+## 3. Submit the investigation through the API
+
+The command below is the API trigger: it sends an authenticated POST to `/api/workflows/{workflow_id}/runs` with the captured incident as explicit `input`. Writing the incident file alone does not trigger a run.
 
 This explicitly starts a paid investigation, capped at two model calls. The existing Agent Forge model configuration applies. There are no automatic model-call retries.
 
@@ -76,7 +78,7 @@ This explicitly starts a paid investigation, capped at two model calls. The exis
 .venv/Scripts/python.exe demos/archive_incident.py submit "$incident_dir"
 ```
 
-The command saves `demos/archive-investigation.json` through the authenticated workflow API and pins version 1 when invoking it with the captured incident. It reports the run ID and saves `submission.json` plus `investigation.json` under the incident directory. Repeating the command for the same folder reads the saved run rather than creating another one; server idempotency keys also bind a retry to the same incident. Preserve the folder when retrying after an uncertain response.
+The command binds the captured incident to the reusable `demos/archive-investigation.json` template, writes the prepared `workflow.json`, and saves that workflow through the authenticated API. Its configuration contains a default trigger preset named **Captured archive file-limit failure**, including both `incident` and `available_tools`. The API invocation pins version 1 and supplies that same payload explicitly. It reports the run ID and saves `submission.json` plus `investigation.json` under the incident directory. Repeating the command for the same folder reads the saved run rather than creating another one; server idempotency keys also bind a retry to the same incident. Preserve the folder when retrying after an uncertain response.
 
 The workflow uses the existing `incident_plan`, `collect_incident_evidence` and `incident_assessment` contracts. The planner must request all four discovery tools once; AI forms hypotheses and purposes and can order these bounded checks. The collector executes them serially:
 
@@ -97,7 +99,19 @@ Start the UI using its existing local guide, or run this in a separate Git Bash 
 VITE_API_BASE_URL=http://127.0.0.1:8000 npm --prefix ../agentforge/apps/web run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-Open `http://127.0.0.1:5173` and sign in using the existing local account. Find **Pageview archive investigation** in Flows/Run history, then inspect the printed run ID. Show the planner's hypotheses, recorded tool calls, evidence references, final recommendation and model usage. A successful workflow means the investigation ran, not that the archiver recovered.
+Open `http://127.0.0.1:5173` and sign in using the existing local account.
+
+To run from the designer:
+
+1. Open the saved **Pageview archive investigation** workflow, using the workflow ID from `submission.json` to distinguish earlier verification workflows.
+2. Reopen/reload its latest saved version if an older draft is already open. The prepared workflow includes a default trigger preset; the locally verified workflow was updated to version 2 without changing its existing version-1 run.
+3. Select the Manual trigger and confirm **Captured archive file-limit failure** is the selected payload preset. Its content includes `incident.id`, `incident.job_name`, `incident.job_run_id`, `incident.region` and the read-only tool catalogue.
+4. Validate the workflow. If an explicit next-run JSON override is present, clear that override or use the same incident payload; an empty `{}` override replaces the preset and causes missing-incident errors.
+5. Choose **Run**. This starts a new investigation with up to two paid AI calls. The evidence service must still serve the same incident folder.
+
+Opening the designer does not reuse a previous run's input automatically. Saved trigger presets provide that default; the API trigger supplies it explicitly. Inspecting an old run in Run history and repeating the CLI submit for its existing folder do not create a new run.
+
+In Run history, select the returned run and show the planner's hypotheses, recorded tool calls, evidence references, final recommendation and model usage. A successful workflow means the investigation ran, not that the archiver recovered.
 
 Review the report critically. The first verification run correctly identified the file limit but overstated whether the cleaned-up Kafka record remained available. The evidence now explicitly reports cleanup and next-offset semantics. AI recommendations still require human review.
 

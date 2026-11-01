@@ -1,6 +1,7 @@
 """Create an isolated archive incident and serve its read-only evidence to Agent Forge."""
 
 import argparse
+import copy
 import hmac
 import json
 import os
@@ -11,13 +12,6 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import uuid4
 from urllib.request import Request, urlopen
-
-from confluent_kafka import Consumer, KafkaError, KafkaException, Producer, TopicPartition
-from confluent_kafka.admin import AdminClient, NewTopic
-
-from stream_challenge.events import generate_events, serialize_event
-from stream_challenge.producer import publish_events
-
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ("jobs.get_definition", "jobs.get_run", "jobs.get_log_excerpt", "jobs.get_related_runs")
@@ -47,8 +41,33 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def with_incident_preset(workflow, payload):
+    """Give the designer the same explicit incident input used by the API run."""
+    workflow = copy.deepcopy(workflow)
+    configuration = workflow.setdefault("configuration", {})
+    presets = configuration.setdefault("payload_presets", [])
+    presets[:] = [preset for preset in presets if preset["id"] != "archive_failure"]
+    presets.append({"id": "archive_failure", "name": "Captured archive file-limit failure",
+                    "content": copy.deepcopy(payload)})
+    configuration["default_payload_preset_id"] = "archive_failure"
+    return workflow
+
+
+def prepared_workflow(payload):
+    """Keep the reusable template generic and bind one captured incident per copy."""
+    template = json.loads((ROOT / "demos" / "archive-investigation.json").read_text())
+    return with_incident_preset(template, payload)
+
+
 def capture(bootstrap):
     """Archive two known records, observe a real blocked third write, then clean up Kafka."""
+    # Only capture needs Kafka libraries; preset preparation and evidence reads do not.
+    from confluent_kafka import Consumer, KafkaError, KafkaException, Producer, TopicPartition
+    from confluent_kafka.admin import AdminClient, NewTopic
+
+    from stream_challenge.events import generate_events, serialize_event
+    from stream_challenge.producer import publish_events
+
     identity = "archive-limit-" + uuid4().hex
     folder = ROOT / "data" / "incidents" / identity
     folder.mkdir(parents=True)
@@ -117,8 +136,10 @@ def capture(bootstrap):
             "jobs.get_related_runs": {"active_runs": [], "scope": "isolated consumer only",
                 "note": "Healthy raw-archive and postcode-aggregation groups were not modified"},
         }
-        save(folder / "incident.json", {"incident": incident, "available_tools": available})
+        payload = {"incident": incident, "available_tools": available}
+        save(folder / "incident.json", payload)
         save(folder / "evidence.json", evidence)
+        save(folder / "workflow.json", prepared_workflow(payload))
         print(f"PASS: 3 published, 2 byte-exact archives, offset 2 uncommitted, exit code 1\nIncident: {folder / 'incident.json'}")
         return folder
     finally:
@@ -213,7 +234,8 @@ def submit(folder, api):
         existing = json.loads(receipt.read_text())
         result = request("/api/runs/" + existing["run_id"])
     else:
-        workflow = json.loads((ROOT / "demos" / "archive-investigation.json").read_text())
+        workflow = prepared_workflow(payload)
+        save(folder / "workflow.json", workflow)
         saved = request("/api/workflows", workflow, identity + "-workflow")
         result = request(f"/api/workflows/{saved['id']}/runs",
                          {"version_number": 1, "input": payload}, identity + "-investigation")
