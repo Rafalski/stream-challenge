@@ -2,7 +2,7 @@
 
 import pytest
 
-from demos.archive_incident import evidence_result, prepared_workflow, with_incident_preset
+from demos.archive_incident import evidence_result, load_snapshot, mark_ready, prepared_workflow, with_incident_preset
 
 
 @pytest.fixture
@@ -55,6 +55,26 @@ def test_enhanced_copy_has_a_human_gate_without_recovery_actions():
     support = enhanced["configuration"]["payload_presets"][-1]["content"]
     assert support["incident"] == payload["incident"]
     assert support["operator_request"] == "support_review"
+
+
+def test_incident_root_serves_only_completed_unchanged_capture(tmp_path):
+    """New incident files must not become tools until cleanup/completion is published."""
+    import json
+
+    identity = "archive-limit-" + "a" * 32
+    folder = tmp_path / identity
+    folder.mkdir()
+    payload = {"incident": {"id": identity}}
+    (folder / "incident.json").write_text(json.dumps(payload))
+    (folder / "evidence.json").write_text("{}")
+    request = {"context": payload}
+    with pytest.raises(ValueError, match="incomplete"):
+        load_snapshot(tmp_path, request)
+    mark_ready(folder)
+    assert load_snapshot(tmp_path, request)[0] == payload["incident"]
+    (folder / "evidence.json").write_text('{"changed":true}')
+    with pytest.raises(ValueError, match="changed"):
+        load_snapshot(tmp_path, request)
 
 
 @pytest.mark.parametrize("change", ["tool", "incident", "run", "extra_argument"])

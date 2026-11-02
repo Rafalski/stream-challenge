@@ -2,6 +2,7 @@
 
 import argparse
 import copy
+import hashlib
 import hmac
 import json
 import os
@@ -39,6 +40,15 @@ def wait_for(probe, description, timeout=60):
 def save(path, value):
     """Keep only synthetic scenario data and bounded operational evidence."""
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def mark_ready(folder):
+    """Publish completion atomically, only after capture cleanup succeeds."""
+    marker = {"incident_sha256": hashlib.sha256((folder / "incident.json").read_bytes()).hexdigest(),
+              "evidence_sha256": hashlib.sha256((folder / "evidence.json").read_bytes()).hexdigest()}
+    temporary = folder / "ready.tmp"
+    save(temporary, marker)
+    temporary.replace(folder / "ready.json")
 
 
 def with_incident_preset(workflow, payload):
@@ -148,8 +158,6 @@ def capture(bootstrap):
         save(folder / "evidence.json", evidence)
         save(folder / "workflow.json", prepared_workflow(payload))
         save(folder / "workflow-gated.json", prepared_workflow(payload, enhanced=True))
-        print(f"PASS: 3 published, 2 byte-exact archives, offset 2 uncommitted, exit code 1\nIncident: {folder / 'incident.json'}")
-        return folder
     finally:
         if started:
             docker("rm", "-f", container)
@@ -162,6 +170,9 @@ def capture(bootstrap):
                 except KafkaException as error:
                     if error.args[0].code() != KafkaError.GROUP_ID_NOT_FOUND:
                         raise
+    mark_ready(folder)
+    print(f"PASS: 3 published, 2 byte-exact archives, offset 2 uncommitted, exit code 1\nIncident: {folder / 'incident.json'}")
+    return folder
 
 
 def evidence_result(snapshot, request):
@@ -180,13 +191,33 @@ def evidence_result(snapshot, request):
     return {"synthetic": True, "data": {**evidence[tool], "provenance": "recorded isolated demo evidence"}}
 
 
+def load_snapshot(folder, request):
+    """Serve either one fixed capture or a completed incident directly under a root."""
+    if not (folder / "incident.json").is_file():
+        identity = request.get("context", {}).get("incident", {}).get("id", "")
+        if not isinstance(identity, str) or not identity.startswith("archive-limit-"):
+            raise ValueError("unknown incident")
+        child = folder / identity
+        if child.resolve().parent != folder.resolve() or not (child / "ready.json").is_file():
+            raise ValueError("incident is outside this root or incomplete")
+        for filename in ("ready.json", "incident.json", "evidence.json"):
+            path = child / filename
+            if path.resolve().parent != child.resolve() or path.stat().st_size > 32768:
+                raise ValueError("invalid captured file path or size")
+        marker = json.loads((child / "ready.json").read_text())
+        for name in ("incident", "evidence"):
+            if hashlib.sha256((child / f"{name}.json").read_bytes()).hexdigest() != marker[f"{name}_sha256"]:
+                raise ValueError("captured evidence changed after completion")
+        folder = child
+    payload = json.loads((folder / "incident.json").read_text(encoding="utf-8"))
+    return payload["incident"], json.loads((folder / "evidence.json").read_text(encoding="utf-8"))
+
+
 def serve(folder, port):
-    """Serve a single fixed snapshot on loopback, without Docker or filesystem tools."""
+    """Serve a capture or completed incident root on loopback, without mutation tools."""
     token = os.environ.get("INCIDENT_TOOLS_TOKEN", "")
     if len(token) < 32:
         raise ValueError("set INCIDENT_TOOLS_TOKEN to a secret of at least 32 characters")
-    payload = json.loads((folder / "incident.json").read_text(encoding="utf-8"))
-    snapshot = payload["incident"], json.loads((folder / "evidence.json").read_text(encoding="utf-8"))
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -201,11 +232,12 @@ def serve(folder, port):
                 length = int(self.headers.get("Content-Length", "0"))
                 if self.path != "/tools/invoke" or not 0 < length <= 32768:
                     raise ValueError("invalid request")
-                result = evidence_result(snapshot, json.loads(self.rfile.read(length)))
+                request = json.loads(self.rfile.read(length))
+                result = evidence_result(load_snapshot(folder, request), request)
                 body = json.dumps(result).encode()
                 if len(body) > 4096:
                     raise ValueError("evidence exceeds Agent Forge's per-tool limit")
-            except (ValueError, TypeError, AttributeError):
+            except (ValueError, TypeError, AttributeError, OSError, KeyError):
                 self.send_error(400)
                 return
             self.send_response(200)

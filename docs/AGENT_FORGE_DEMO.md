@@ -1,11 +1,12 @@
 # Read-only archive incident investigation
 
-This controlled failure uses a separate Kafka topic, consumer group, container and archive directory. It does not change or stop the healthy raw ingester or Flink job. No code defect is introduced: the archive safeguard correctly rejects its third record when configured with a two-file limit.
+This controlled failure uses a separate Kafka topic, consumer group, container and archive directory. It does not change or stop the healthy raw ingester or Flink job. No code defect is introduced: the archive safeguard correctly rejects its third record when configured with a two-file limit. For local execution, a small incident-file monitor in the Agent Forge repository watches completed captures and triggers investigation through the existing authenticated API. It monitors emitted incident files, not all pipeline logs or arbitrary production faults.
 
 ```mermaid
 flowchart LR
     C[Isolated capture command] --> I[Incident JSON]
-    I --> A[Authenticated Agent Forge run API]
+    I --> M[Local incident-file monitor]
+    M --> A[Authenticated Agent Forge run API]
     A --> P[AI investigation plan]
     P --> T[Four allowlisted evidence reads]
     T --> R[AI assessment and recommendation]
@@ -27,7 +28,7 @@ Expect `PASS: 3 published, 2 byte-exact archives, offset 2 uncommitted, exit cod
 incident_dir=data/incidents/archive-limit-REPLACE_WITH_PRINTED_ID
 ```
 
-The capture preserves `incident.json`, `evidence.json`, a prepared `workflow.json` with the incident selected as its default trigger preset, and the two raw files. It removes only its generated container, topic and group. Next committed offset 2 means offsets 0 and 1 were committed; record 2 was blocked. After cleanup, that temporary Kafka record is no longer available for replay. This is historical evidence, not a live recovery target.
+The capture publishes `ready.json` atomically after cleanup, with checksums for the incident and evidence. It preserves `incident.json`, `evidence.json`, a prepared `workflow.json` with the incident selected as its default trigger preset, and the two raw files. It removes only its generated container, topic and group. Next committed offset 2 means offsets 0 and 1 were committed; record 2 was blocked. After cleanup, that temporary Kafka record is no longer available for replay. This is historical evidence, not a live recovery target.
 
 ## 2. Connect the local evidence service
 
@@ -59,18 +60,37 @@ export OPENAI_API_KEY
 Start only when ports 8000 and 8011 are free; do not replace an existing Agent Forge session. These background processes inherit the same temporary credentials:
 
 ```bash
-.venv/Scripts/python.exe -u demos/archive_incident.py serve "$incident_dir" > "$incident_dir/tools-server.log" 2>&1 &
+.venv/Scripts/python.exe -u demos/archive_incident.py serve data/incidents > "$incident_dir/tools-server.log" 2>&1 &
 tools_pid=$!
 ../agentforge/.venv/Scripts/python.exe -m app.migrate
 ../agentforge/.venv/Scripts/python.exe -m uvicorn app.main:app --app-dir ../agentforge/apps/api --host 127.0.0.1 --port 8000 > "$incident_dir/api-server.log" 2>&1 &
 api_pid=$!
 ```
 
-Wait for `Application startup complete` in `api-server.log`. The evidence service listens only on loopback port 8011. It reads one fixed snapshot loaded at startup, permits only matching incident/job arguments and rejects unauthenticated requests or unsupported tools. It has no shell, Docker, arbitrary-file or mutation endpoint.
+Wait for `Application startup complete` in `api-server.log`. The evidence service listens only on loopback port 8011. It resolves the requested incident within the configured incident root, verifies its completion marker/checksums, permits only matching incident/job arguments and rejects unauthenticated requests or unsupported tools. This allows a new capture to be investigated without restarting the service. It has no shell, Docker, arbitrary-file or mutation endpoint.
 
-## 3. Submit the investigation through the API
+## 3. Automated local incident monitoring
 
-The command below is the API trigger: it sends an authenticated POST to `/api/workflows/{workflow_id}/runs` with the captured incident as explicit `input`. Writing the incident file alone does not trigger a run.
+Start the local evidence service/API from section 2 and ensure the intended workflow is already saved. For the enhanced workflow, use version 1 and its UUID from Agent Forge or `enhanced-workflow.json`. The monitor script lives in Agent Forge as `scripts/watch_incidents.py`, not in the streaming application.
+
+In a separate Git Bash window at the Agent Forge repository root:
+
+```bash
+mkdir -p ../stream-challenge/data/incidents
+winpty .venv/Scripts/python.exe scripts/watch_incidents.py --incidents-dir ../stream-challenge/data/incidents --workflow-id "$workflow_id" --version 1
+```
+
+Set `workflow_id` to the intended saved workflow UUID first. The script uses `AGENTFORGE_API_TOKEN` if supplied; otherwise it prompts securely for the normal local account login. Windows Terminal may not need `winpty`; Linux uses its own Python without it.
+
+Wait for **Watching ...**, then run the capture command from section 1 in the stream-challenge window. On the new `ready.json`, the monitor validates the captured input and calls `POST /api/workflows/{workflow_id}/runs` with a pinned version and stable idempotency key. Follow its printed run ID in Agent Forge; the enhanced investigation waits for a User Choice in Tasks. Do not also click Run or use manual submit for that same demonstration: those are independent trigger paths.
+
+The monitor skips old captures by default and stops after one submission to bound model spend. Restart it for another new capture, or explicitly set `--max-runs 3`. It stores duplicate-dispatch claims in Agent Forge's `.local/incident-watcher.sqlite3`, never credentials. A timeout/crash is not automatically retried; inspect run history before attempting manual recovery. This is a local polling adapter, not a built-in file trigger, Prometheus alert integration or production incident-monitoring system. Agent Forge records the invocation through its existing manual-run API.
+
+Use `--dry-run` for file detection without an API/model call. `--include-existing` explicitly opts into older captures and may incur model charges. Keep the claims database across restarts. Ctrl+C stops the monitor without stopping the healthy pipeline or cancelling an already submitted investigation. Further monitor behaviour is documented in Agent Forge's `docs/LOCAL_INCIDENT_MONITOR.md`.
+
+### Manual API trigger alternative
+
+The command below is the API trigger: it sends an authenticated POST to `/api/workflows/{workflow_id}/runs` with the captured incident as explicit `input`. The manual command is an alternative to the monitor; use one trigger path for the demo.
 
 This explicitly starts a paid investigation, capped at two model calls. The existing Agent Forge model configuration applies. There are no automatic model-call retries.
 
@@ -107,7 +127,7 @@ To run from the designer:
 2. Reopen/reload its latest saved version if an older draft is already open. The prepared workflow includes a default trigger preset; the locally verified workflow was updated to version 2 without changing its existing version-1 run.
 3. Select the Manual trigger and confirm **Captured archive file-limit failure** is the selected payload preset. Its content includes `incident.id`, `incident.job_name`, `incident.job_run_id`, `incident.region` and the read-only tool catalogue.
 4. Validate the workflow. If an explicit next-run JSON override is present, clear that override or use the same incident payload; an empty `{}` override replaces the preset and causes missing-incident errors.
-5. Choose **Run**. This starts a new investigation with up to two paid AI calls. The evidence service must still serve the same incident folder.
+5. Choose **Run**. This starts a new investigation with up to two paid AI calls. The evidence service must include that incident in its configured root.
 
 Opening the designer does not reuse a previous run's input automatically. Saved trigger presets provide that default; the API trigger supplies it explicitly. Inspecting an old run in Run history and repeating the CLI submit for its existing folder do not create a new run.
 
@@ -163,4 +183,4 @@ On Windows, confirm ports 8000 and 8011 have stopped; use the process's own term
 
 ## DQ is separate from this failure
 
-This scenario uses three valid pageviews and demonstrates an operational guard, not a data-quality defect. Flink separately rejects malformed JSON, missing/extra fields, wrong types, blank location/page values and invalid/future timestamps. It counts/logs `invalid_event` while raw ingestion preserves the original bytes. Events for closed windows are counted/logged as `late_event` and excluded from aggregates. Neither currently creates incidents automatically. A DQ-triggered investigation and file watcher remain later work.
+This scenario uses three valid pageviews and demonstrates an operational guard, not a data-quality defect. Flink separately rejects malformed JSON, missing/extra fields, wrong types, blank location/page values and invalid/future timestamps. It counts/logs `invalid_event` while raw ingestion preserves the original bytes. Events for closed windows are counted/logged as `late_event` and excluded from aggregates. Neither currently creates incidents automatically. The local file monitor handles completed archive-limit captures; DQ incident creation remains later work.

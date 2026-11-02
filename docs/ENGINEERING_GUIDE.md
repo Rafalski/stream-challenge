@@ -170,7 +170,9 @@ Local verification passed the real failure scenario and authenticated service bo
 
 An enhanced copy adds a classification stage and first-match Condition before the existing planner/collector/assessment chain. A support-review classification skips tools; the investigation route keeps four allowlisted reads. Both routes converge on a fixed, single-selection User Choice assigned to administrators with a required comment. Its options are manual follow-up proposals, not execution authority; a literal summary records the actual selection alongside `action_executed=false`. The copy allows three AI calls, while the original remains capped at two. Both initial paths and all four human responses passed real-engine checks using fake AI in temporary SQLite; no paid enhanced run was performed.
 
-A later DQ defect demonstration, file watcher, automatic incident detection and recovery execution remain separate work. Human approval is required before any fix branch or PR, and the engineer owns commits and pushes.
+The local file-monitor adapter now lives in Agent Forge at `scripts/watch_incidents.py`. Capture publishes a checksum-bound ready marker only after isolated cleanup. The adapter polls for newly completed captures, claims workflow/version/incident identity in a separate SQLite file before HTTP, and sends an idempotent authenticated run request. It skips historical files by default, stops after one attempt by default and never automatically retries an uncertain outcome. Evidence tools serve each completed incident from a configured root. This is local demo ingress through the existing manual API, not native platform file-trigger scheduling or general production monitoring.
+
+A later DQ defect demonstration, production incident detection and recovery execution remain separate work. Human approval is required before any fix branch or PR, and the engineer owns commits and pushes.
 
 ## Technical discussion and references
 
