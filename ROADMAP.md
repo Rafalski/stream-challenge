@@ -1,5 +1,7 @@
 # Roadmap
 
+Documentation review on 2 November 2026: shortened the README, moved detailed commands into a local reference, repaired navigation text and removed source-brief wording. All 73 unit cases, four Kafka integration checks and the isolated Kafka/Flink scenario passed again. Local documentation links and Compose configuration also passed checks. Runtime behaviour is unchanged; this review does not complete the deferred CI or recovery work, or replace engineer approval.
+
 Milestones 0-2 are reviewed. Milestone 3 is implemented and verified locally. On 1 November 2026, the engineer authorised the next increment: concurrent raw ingestion and Flink in the end-to-end demonstration, with clear reporting. This milestone 4 increment is implemented and verified locally, awaiting review. The engineer has also authorised a focused optional monitoring increment; recovery and CI remain unstarted. Checkboxes mean verified completion and engineer review.
 
 The same demo scope now includes a three-phase live stream, uneven postcode counts and an optional read-only Kafka browser. A 1,224-record live run, committed output, raw archival and browser inspection were verified locally. This is separate from the 13-record assertion-based end-to-end scenario; Prometheus/Grafana monitoring is a separate authorised increment below.
@@ -27,6 +29,6 @@ Mandatory functionality is covered by milestones 1-5. CI and final review remain
 
 Before extended-volume or production use, separately agree byte-preserving rolled archives, retention and recovery evidence. This is a readiness gate, not a claim that the current bounded local archive supports sustained daily volume.
 
-Security, automation and diagrams are bonuses in the brief. Our plan already includes CI and Mermaid diagrams; additional hardening and alerting remain optional and need an agreed scope.
+CI remains planned and Mermaid diagrams document the design. Additional hardening and alerting need a separate agreed scope.
 
 At each gate, report changes, verification results, outstanding issues and a short suggested commit message. The engineer reviews and commits locally.

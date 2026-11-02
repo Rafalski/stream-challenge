@@ -11,7 +11,7 @@ docker compose version
 
 Git Bash otherwise rewrites container paths such as `/app/data` into Windows paths under `C:/Program Files/Git`, causing checkpoint-directory failures. `MSYS_NO_PATHCONV` disables that conversion in this shell; it is harmless in Linux/WSL. Quoting a path alone does not prevent conversion.
 
-If WSL reports that Docker is unavailable, enable the Ubuntu distribution under Docker Desktop **Settings Ã¢â€ â€™ Resources Ã¢â€ â€™ WSL Integration**, then reopen the terminal.
+If WSL reports that Docker is unavailable, enable the Ubuntu distribution under Docker Desktop **Settings > Resources > WSL Integration**, then reopen the terminal.
 
 ## 1. Start services
 
@@ -23,6 +23,11 @@ docker compose up -d --wait --wait-timeout 120
 docker compose wait kafka-init
 docker compose build raw-ingester jobmanager
 docker compose up -d --wait --wait-timeout 180 raw-ingester jobmanager taskmanager
+```
+
+For the optional Kafka browser and monitoring dashboard, also start:
+
+```bash
 docker compose up -d --wait --wait-timeout 120 kafka-ui kafka-exporter prometheus grafana
 ```
 
@@ -49,7 +54,7 @@ If submission fails with a checkpoint path containing `C:/Program Files/Git`, ru
 ## 3. Open the live views
 
 - [Grafana](http://127.0.0.1:3000/d/streaming-demo): leave `postcode-pageviews` and Job ID **All** selected. Watch throughput, checkpoints and consumer lag.
-- [Kafka browser](http://127.0.0.1:8080): select **local Ã¢â€ â€™ Topics Ã¢â€ â€™ pageviews Ã¢â€ â€™ Messages Ã¢â€ â€™ Live**. Expand a record to inspect its four fields.
+- [Kafka browser](http://127.0.0.1:8080): select **local > Topics > pageviews > Messages > Live**. Expand a record to inspect its four fields.
 - [Flink](http://127.0.0.1:8081): inspect the running job and its checkpoint history.
 
 A fresh submission replays retained Kafka input. Before producing demo traffic, let `postcode-aggregation` lag settle to zero and confirm completed checkpoints are increasing. Older output minutes during replay are expected.
@@ -91,7 +96,7 @@ Use Tab to move between sections, 1/2 from the table to edit filters, Enter to a
 .venv/Scripts/python.exe -m stream_challenge.results "$results_dir" --postcode SW19 --minute 2026-11-01T19:46
 ```
 
-Replace the example UTC minute with one present in the output; omit either filter to show all matching rows. Linux/WSL uses `.venv-linux/bin/python` for the install and viewer commands. [Viewer reference](../README.md#aggregate-results-viewer).
+Replace the example UTC minute with one present in the output; omit either filter to show all matching rows. Linux/WSL uses `.venv-linux/bin/python` for the install and viewer commands. [Viewer reference](LOCAL_REFERENCE.md#aggregate-results-viewer).
 
 ## 6. Optional automated checks
 
@@ -113,6 +118,14 @@ python3.11 -m venv .venv-linux
 
 If `python3.11` is missing, resolve that host prerequisite first. Docker demos still work without it. Native WSL test execution has not been verified.
 
+With Kafka running, check publishing, byte preservation and failed-write offsets:
+
+```bash
+.venv/Scripts/python.exe -m pytest -m "integration and not flink" -v
+```
+
+Linux/WSL uses `.venv-linux/bin/python` in place of the Windows executable.
+
 For the real end-to-end scenario, cancel the demo job in Flink and wait for **CANCELED** and an available task slot. Leave the shared services running. Git Bash:
 
 ```bash
@@ -133,7 +146,7 @@ Expect four matching aggregate rows, 13 byte-exact raw records and **1 passed**.
 docker compose --profile "*" down
 ```
 
-Kafka data and host output files are retained. Further setup and safeguards are in the [README](../README.md).
+Kafka data and host output files are retained. Further setup and safeguards are in the [local reference](LOCAL_REFERENCE.md).
 
 ## 8. Optional complete reset
 

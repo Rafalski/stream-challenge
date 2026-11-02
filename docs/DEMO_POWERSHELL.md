@@ -12,6 +12,11 @@ docker compose up -d --wait --wait-timeout 120
 docker compose wait kafka-init
 docker compose build raw-ingester jobmanager
 docker compose up -d --wait --wait-timeout 180 raw-ingester jobmanager taskmanager
+```
+
+For the optional Kafka browser and monitoring dashboard, also start:
+
+```powershell
 docker compose up -d --wait --wait-timeout 120 kafka-ui kafka-exporter prometheus grafana
 ```
 
@@ -36,7 +41,7 @@ Wait until all three Flink boxes show running tasks. The separate `raw-ingester`
 ## 3. Open the live views
 
 - [Grafana](http://127.0.0.1:3000/d/streaming-demo): leave `postcode-pageviews` and Job ID **All** selected. Watch throughput, checkpoints and consumer lag.
-- [Kafka browser](http://127.0.0.1:8080): select **local Ã¢â€ â€™ Topics Ã¢â€ â€™ pageviews Ã¢â€ â€™ Messages Ã¢â€ â€™ Live**. Expand a record to inspect its four fields.
+- [Kafka browser](http://127.0.0.1:8080): select **local > Topics > pageviews > Messages > Live**. Expand a record to inspect its four fields.
 - [Flink](http://127.0.0.1:8081): inspect the running job and its checkpoint history.
 
 ## 4. Produce low, busy and medium traffic
@@ -76,7 +81,7 @@ Use Tab to move between sections, 1/2 from the table to edit filters, Enter to a
 .\.venv\Scripts\python.exe -m stream_challenge.results $resultsDir --postcode SW19 --minute 2026-11-01T19:46
 ```
 
-Replace the example UTC minute with one present in the output; omit either filter to show all matching rows. [Viewer reference](../README.md#aggregate-results-viewer).
+Replace the example UTC minute with one present in the output; omit either filter to show all matching rows. [Viewer reference](LOCAL_REFERENCE.md#aggregate-results-viewer).
 
 ## 6. Optional automated checks
 
@@ -86,6 +91,12 @@ Native tests require Windows Python 3.11. Prepare a Windows environment once:
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[test]"
 .\.venv\Scripts\python.exe -m pytest
+```
+
+With Kafka running, check publishing, byte preservation and failed-write offsets:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -m "integration and not flink" -v
 ```
 
 For the real end-to-end scenario, cancel the demo job in Flink and wait for **CANCELED** and an available task slot. Leave the shared services running:
@@ -102,7 +113,7 @@ Expect four matching aggregate rows, 13 byte-exact raw records and **1 passed**.
 docker compose --profile "*" down
 ```
 
-Kafka data and host output files are retained. Further setup and safeguards are in the [README](../README.md).
+Kafka data and host output files are retained. Further setup and safeguards are in the [local reference](LOCAL_REFERENCE.md).
 
 ## 8. Optional complete reset
 

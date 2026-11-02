@@ -6,9 +6,9 @@ Baseline agreed on 29 October 2026; Flink implementation authorised on 31 Octobe
 
 Build a straightforward, reliable and understandable streaming pipeline that runs locally using Docker. Assume fewer than 100,000 pageviews daily. No peak rate or latency target has been specified.
 
-The exercise requires sample event production, real-time ingestion, unchanged archival, continuous aggregation by postcode and one-minute interval, separate aggregate storage, a publicly accessible GitHub repository, run instructions and explainable design choices.
+The pipeline generates sample events, ingests them in real time, archives original payloads and continuously counts pageviews by postcode and one-minute interval. Aggregates are stored separately. The repository provides source, local run instructions and design rationale.
 
-The brief permits Kafka or Kinesis input, local files or S3 storage, and a choice of streaming technology. We have selected Python, Kafka, PyFlink and local files, run through Docker Compose. Event-time tumbling windows, independent raw ingestion, pytest, scenario tests and GitHub Actions are project decisions or engineering additions, rather than technologies mandated by the exercise. AWS-specific guidance applies only to the unselected alternative route.
+The selected stack is Python, Kafka, PyFlink and local files, run through Docker Compose. The design uses event-time tumbling windows, independent raw ingestion and pytest scenarios. GitHub Actions remains planned.
 
 ## Event contract
 
@@ -21,7 +21,7 @@ Each pageview contains these four fields. Do not silently add or change fields.
 | `webpage` | string | Visited URL |
 | `timestamp` | integer (bigint) | Unix epoch seconds when the pageview occurred |
 
-Sample supplied with the brief:
+Example event:
 
 ```json
 {
@@ -36,11 +36,11 @@ These are example values, not constants for every generated event. The sample po
 
 ## Aggregate content
 
-Each aggregate must contain the postcode, the datetime identifying its one-minute aggregation window and the number of pageviews for that postcode and window. Write it under a separate local subdirectory/path from raw events. Field names, datetime representation and whether to include both window boundaries remain implementation decisions. No user-stream join or enrichment is requested.
+Each aggregate must contain the postcode, the datetime identifying its one-minute aggregation window and the number of pageviews for that postcode and window. Write it under a separate local subdirectory/path from raw events. The implemented schema is `postcode`, UTC `window_start` and `pageview_count`; the window ends one minute after its start. No user-stream join or enrichment is requested.
 
 ## Base data-quality requirements
 
-These are project additions, not extra requirements attributed to the brief. They form part of the proposed base scope and do not depend on optional monitoring tools.
+These checks form part of the base scope and do not depend on optional monitoring tools.
 
 - Validate that each payload is valid JSON containing an object with the required fields and types. Reject missing/null required values and booleans used as integers. Do not silently coerce or repair values.
 - Preserve original payloads in the raw archive, including malformed or rejected records. Exclude invalid records from aggregation and prevent their timestamps from advancing watermarks. Continue processing valid records when individual records fail validation.
@@ -48,36 +48,36 @@ These are project additions, not extra requirements attributed to the brief. The
 - Verify output quality independently in end-to-end scenarios: required aggregate fields, valid minute boundaries, positive integer counts and one final result per postcode/window under the agreed final-output policy. If corrections are selected, define how final results are identified.
 - Reconcile known test inputs with validation outcomes and aggregate counts, accounting for late exclusions and replay under the agreed policies. Check counts by postcode/window as well as totals. Compare raw records and outputs only after the scenario's observable completion conditions are met, not by assuming both consumers progress together.
 
-The agreed baseline rejects extra fields and blank postcode/webpage strings, preserves non-blank strings unchanged, and accepts integer identifiers without an added sign restriction. Timestamps must be epoch seconds representable as UTC datetimes (years 1-9999) and no more than five minutes ahead of processing time by default. Historical events remain valid. Late records for closed windows are excluded with diagnostics, without changing raw archival. These are project policies, not additional rules from the brief. Do not require full postcodes or URL schemes, add source fields or deduplicate identical pageviews without a separate decision.
+The agreed baseline rejects extra fields and blank postcode/webpage strings, preserves non-blank strings unchanged, and accepts integer identifiers without an added sign restriction. Timestamps must be epoch seconds representable as UTC datetimes (years 1-9999) and no more than five minutes ahead of processing time by default. Historical events remain valid. Late records for closed windows are excluded with diagnostics, without changing raw archival. Do not require full postcodes or URL schemes, add source fields or deduplicate identical pageviews without a separate decision.
 
 ## Requirements and verification
 
-The table is the requirements traceability matrix. Origin distinguishes exercise requirements from our project additions; components reflect our selected implementation. Milestone verification is recorded in the roadmap and guide. Kafka smoke checks do not establish application correctness.
+The table maps requirements to components and verification. Milestone verification is recorded in the roadmap and guide. Kafka smoke checks do not establish application correctness.
 
-| ID | Requirement | Origin | Component | Verification |
-| --- | --- | --- | --- | --- |
-| R1 | Generate sample events using the four-field contract above | Brief | Producer | Unit tests for types and sample values |
-| R2 | Publish JSON events to the source broker | Brief | Producer and Kafka | Real publish/consume test, including send errors |
-| R3 | Archive immutable original payloads without transformation | Brief | Independent raw ingestion and local files | Byte comparison with published payloads |
-| R4 | Continuously aggregate the stream | Brief | PyFlink job | Exercise the real streaming job with Kafka input |
-| R5 | Count pageviews by postcode and one-minute interval | Brief; event-time tumbling is our choice | Aggregation | Expected counts for multiple postcodes, windows and boundaries |
-| R6 | Store postcode, window datetime and pageview count separately from raw events | Brief | Aggregate sink | Check content, datetime meaning and separate path |
-| R7 | Apply base DQ validation and explicit invalid, out-of-order and late-event handling | Project | Validation, raw archive and event-time policy | Unit and real-stream tests for rejection, preservation, continued processing and reason counts |
-| R8 | Run and test locally using Docker; automate setup | Brief for Docker on Kafka route; project for automation | Docker Compose and setup | Clean-environment start, demonstration and stop |
-| R9 | Include automated tests using pytest | Project | Test suites | Validation, timestamp and applicable window units; Kafka, Flink and file integration tests |
-| R10 | Provide a scenario-driven end-to-end harness | Project | Scenario tests | Named inputs and expected raw/aggregate/error results; isolation, observable completion, comparison, report and cleanup |
-| R11 | Use structured logging, explicit errors and basic operational visibility | Project | Producer, ingestion and job | Inspect logs, progress and failure behaviour |
-| R12 | Automate checks with GitHub Actions | Project | CI | Successful run of agreed checks on a clean runner |
-| R13 | Provide run instructions; also document generation, inspection, tests, monitoring status and limitations | Brief for run instructions; project for detail | README, demo guides and optional results viewer | Follow verified instructions; inspect finished output and postcode/minute filters |
-| R14 | Design for fewer than 100,000 pageviews daily | Brief | Design and local setup | Review resources and successful demonstration; no inferred peak-rate guarantee |
-| R15 | Supply source through a publicly accessible GitHub repository and keep it public-safe | Brief for public access; project for confidentiality rules | Repository; publication by engineer | Content review and engineer verification of public source availability |
-| R16 | Explain design choices; record alternatives, AI workflow and separate production considerations | Brief for rationale; project for supporting guides | Engineering guide and agent rules | Engineer review against scope |
-| R17 | Check aggregate quality and independently reconcile known input/output counts | Project | End-to-end validation | Per-postcode/window and total comparisons, with invalids, late exclusions and replay accounted for |
-| R18 | Provide default-enabled local run-duration, archive-budget and free-space safeguards, with explicit overrides/opt-out and no automatic data deletion | Project | Producer and raw ingester | Focused boundary checks; real Kafka verification that a blocked write does not advance its offset |
-| O1 | Optional monitoring and alerting, using Prometheus/Grafana if selected | Brief bonus; tools chosen by project | Existing integrations and dashboards | Verify available throughput, invalid-event, output, lag, health, error, checkpoint/recovery and agreed alert signals |
-| O2 | Optional Agent Forge incident investigation | Project | Authorised isolated archive-limit failure and read-only evidence adapter; DQ defect remains later work | Real failure capture, immutable investigation/tool history, bounded AI calls, independent archive/offset checks and human review; no recovery actions |
+| ID | Requirement | Component | Verification |
+| --- | --- | --- | --- |
+| R1 | Generate sample events using the four-field contract above | Producer | Unit tests for types and sample values |
+| R2 | Publish JSON events to the source broker | Producer and Kafka | Real publish/consume test, including send errors |
+| R3 | Archive immutable original payloads without transformation | Independent raw ingestion and local files | Byte comparison with published payloads |
+| R4 | Continuously aggregate the stream | PyFlink job | Exercise the real streaming job with Kafka input |
+| R5 | Count pageviews by postcode and one-minute interval | Aggregation | Expected counts for multiple postcodes, windows and boundaries |
+| R6 | Store postcode, window datetime and pageview count separately from raw events | Aggregate sink | Check content, datetime meaning and separate path |
+| R7 | Apply base DQ validation and explicit invalid, out-of-order and late-event handling | Validation, raw archive and event-time policy | Unit and real-stream tests for rejection, preservation, continued processing and reason counts |
+| R8 | Run and test locally using Docker; automate setup | Docker Compose and setup | Clean-environment start, demonstration and stop |
+| R9 | Include automated tests using pytest | Test suites | Validation, timestamp and applicable window units; Kafka, Flink and file integration tests |
+| R10 | Provide a scenario-driven end-to-end harness | Scenario tests | Named inputs and expected raw/aggregate/error results; isolation, observable completion, comparison, report and cleanup |
+| R11 | Use structured logging, explicit errors and basic operational visibility | Producer, ingestion and job | Inspect logs, progress and failure behaviour |
+| R12 | Automate checks with GitHub Actions | CI | Successful run of agreed checks on a clean runner |
+| R13 | Provide run instructions; also document generation, inspection, tests, monitoring status and limitations | README, demo guides and optional results viewer | Follow verified instructions; inspect finished output and postcode/minute filters |
+| R14 | Design for fewer than 100,000 pageviews daily | Design and local setup | Review resources and successful demonstration; no inferred peak-rate guarantee |
+| R15 | Supply source through a publicly accessible GitHub repository and keep it public-safe | Repository; publication by engineer | Content review and engineer verification of public source availability |
+| R16 | Explain design choices; record alternatives, AI workflow and separate production considerations | Engineering guide and agent rules | Engineer review against scope |
+| R17 | Check aggregate quality and independently reconcile known input/output counts | End-to-end validation | Per-postcode/window and total comparisons, with invalids, late exclusions and replay accounted for |
+| R18 | Provide default-enabled local run-duration, archive-budget and free-space safeguards, with explicit overrides/opt-out and no automatic data deletion | Producer and raw ingester | Focused boundary checks; real Kafka verification that a blocked write does not advance its offset |
+| O1 | Optional monitoring and alerting, using Prometheus/Grafana if selected | Existing integrations and dashboards | Verify available throughput, invalid-event, output, lag, health, error, checkpoint/recovery and agreed alert signals |
+| O2 | Optional Agent Forge incident investigation | Authorised isolated archive-limit failure and read-only evidence adapter; DQ defect remains later work | Real failure capture, immutable investigation/tool history, bounded AI calls, independent archive/offset checks and human review; no recovery actions |
 
-R1-R18 are required for our proposed project scope, with their origins shown above. R18 is optional at execution time through an explicit opt-out, enabled by default. O1 and O2 do not block the core demonstration. A lightweight O1 increment is authorised: Flink metrics, Prometheus and a provisioned Grafana dashboard. Consumer lag through an existing Kafka exporter is also authorised. Raw-ingester exporters, alerts and recovery monitoring remain outside this increment. O2 now includes the authorised local archive-limit investigation only; its DQ defect and recovery extensions remain deferred. The brief also lists security, automation and diagrams as optional enhancements. We have chosen CI automation and Mermaid diagrams as project deliverables; further security hardening and alerting remain optional. Confidentiality and secret exclusion always apply.
+R1-R18 define the project scope; implementation and review status are tracked in the roadmap. R18 is optional at execution time through an explicit opt-out, enabled by default. O1 and O2 do not block the core demonstration. A lightweight O1 increment is authorised: Flink metrics, Prometheus and a provisioned Grafana dashboard. Consumer lag through an existing Kafka exporter is also authorised. Raw-ingester exporters, alerts and recovery monitoring remain outside this increment. O2 now includes the authorised local archive-limit investigation only; its DQ defect and recovery extensions remain deferred. CI automation is planned and Mermaid diagrams document the design; further security hardening and alerting remain separate work. Confidentiality and secret exclusion always apply.
 
 ## Delivery constraints
 
@@ -87,7 +87,7 @@ Keep dependencies and code simple. Test the actual streaming behaviour rather th
 
 The per-record archive is for bounded local demonstrations. Default safety budgets are lower than a full day at the assumed upper volume; sustained daily-volume capability has not been verified. Before extended-volume or production use, agree and verify rolled byte-preserving storage, retention and recovery. Local simplicity must not hide a known unbounded-growth problem or imply that cloud deployment removes it.
 
-Document in concise British English using Markdown and Mermaid. Keep source data unchanged and use generic terminology. Exclude company identities, recruitment context, original assessment material, proprietary information, personal data and credentials.
+Document in concise British English using Markdown and Mermaid. Keep source data unchanged and use generic terminology. Use synthetic examples and exclude identifying information, private source material and credentials.
 
 The engineer reviews decisions and owns Git history. No agent commits, pushes, PR creation/merging or visibility changes are authorised. Implementation starts only after specification review and authorisation of the next milestone.
 
@@ -95,4 +95,4 @@ The engineer reviews decisions and owns Git history. No agent commits, pushes, P
 
 Demonstrate generation, Kafka publication, unchanged raw archival, correct postcode/window/count records, separate aggregate files and documented error behaviour. Run the relevant tests and verify the README walkthrough. The engineer handles public publication; its requirement does not authorise agent pushes or repository visibility changes.
 
-The verified Flink baseline uses DataStream processing, JSONL output with `postcode`, UTC `window_start` and `pageview_count`, five-second disorder tolerance, final-only windows and ten-second checkpoints. A quiet stream can leave its last window open. Versions and runtime evidence are recorded in the engineering guide; broader recovery guarantees and production storage remain deferred. These choices must not be treated as additional requirements from the brief.
+The verified Flink baseline uses DataStream processing, JSONL output with `postcode`, UTC `window_start` and `pageview_count`, five-second disorder tolerance, final-only windows and ten-second checkpoints. A quiet stream can leave its last window open. Versions and runtime evidence are recorded in the engineering guide; broader recovery guarantees and production storage remain deferred.

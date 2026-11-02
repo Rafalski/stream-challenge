@@ -8,3 +8,7 @@ data/
 *.egg-info/
 build/
 dist/
+.ruff_cache/
+.local-notes/
+.env.*
+!.env.example
