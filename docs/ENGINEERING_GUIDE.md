@@ -18,7 +18,7 @@ flowchart LR
     M --> G[Optional Grafana dashboard]
 ```
 
-Python, Kafka, PyFlink, Docker Compose, local storage, pytest and GitHub Actions are agreed choices. Raw ingestion and aggregation are independent. Direct aggregate output from Flink is preferred over an extra topic.
+The project uses Python, Kafka, PyFlink, Docker Compose, local storage and pytest, with GitHub Actions planned. Raw ingestion and aggregation are independent. Direct aggregate output from Flink is preferred over an extra topic.
 
 I chose Kafka to let archival and aggregation consume independently, PyFlink for event-time windows and checkpointed output, and local files to keep the results easy to inspect. The expected volume does not require a distributed deployment; this topology demonstrates the processing behaviour locally. Production resilience needs separate work.
 
@@ -60,7 +60,7 @@ Core unit tests run locally without Docker. Four Kafka integration checks exerci
 
 ## Technical decisions
 
-The following baseline is agreed and verified locally. Published compatibility informed selection; the continuous streaming scenario supplies runtime evidence.
+The following choices have been verified locally. Published compatibility informed selection; the continuous streaming scenario supplies runtime evidence.
 
 | Decision | Agreed baseline and trade-off |
 | --- | --- |
@@ -130,7 +130,7 @@ Checkpoint state, Kafka offsets and external file commits are different boundari
 
 ## AI-assisted development
 
-Start from the requirement and acceptance criteria. AI can research alternatives and suggest changes; the engineer selects the design and reviews the result.
+I used AI to research alternatives, draft code and documentation, and help investigate failures. I chose the design and reviewed the results against the requirements and test evidence.
 
 1. Agree the specification and a small milestone scope before implementation.
 2. Use test-first development where practical for validation and processing logic.
@@ -138,7 +138,7 @@ Start from the requirement and acceptance criteria. AI can research alternatives
 4. Challenge generated code: inspect assumptions, boundary cases, failure paths and connector behaviour.
 5. Run relevant checks against independently specified expectations. Passing tests do not validate assumptions shared by the code and tests.
 6. Update documentation and report evidence, limitations and unresolved issues. Keep proposed production improvements distinct from local capabilities.
-7. The engineer reviews and commits. AI must not commit, push, create/merge PRs or manufacture history.
+7. Review changes and handle Git history manually. AI does not commit, push or create or merge pull requests.
 
 Use clear comments and accurate explanations. Do not disguise AI assistance or introduce deliberate mistakes. Milestone 1 showed why the README must separately wait for initializer completion. Milestone 2 exposed IPv6 resolution failures in native Windows clients and showed that shutdown must include application profiles. The README now uses an explicit IPv4 address and enables all profiles for shutdown. Record further lessons with supporting evidence as milestones finish.
 
@@ -154,7 +154,7 @@ Writer input is not proof of committed output. Event-time postcode counts remain
 
 Local verification on 1 November 2026: the concurrent 13-record scenario passed with monitoring enabled in Flink, including exporter counts of eight valid, five invalid and one late event. Both Prometheus targets were UP and all 13 dashboard queries returned data. A further paced run published 742 records across 30/45/30-second low/busy/medium phases; committed output and checkpoint progress were visible. Stopping both monitoring services left the same Flink job running; restarting them restored scraping and provisioning. Two startup checkpoint triggers were skipped while Python tasks initialised, then completed checkpoints advanced without further failures. These are local observations, not a load or recovery guarantee.
 
-A later authorised increment adds [Kafka Exporter 1.10.0](https://github.com/danielqsj/kafka_exporter/tree/v1.10.0), internal port 9308, with a Kafka 4.0 protocol setting verified against our 4.3.2 broker. Filters restrict collection to `pageviews` and the two demo groups; inactive groups are included because Flink uses explicit assignment. No new host port or application dependency is added. The dashboard shows exporter availability and committed-offset lag separately. Missing or uninitialised offsets are excluded, rather than shown as zero. Lag is independent of the selected Flink job ID, can remain after a job stops and is not window completeness. Raw ingestion commits after archival; Flink commits after checkpoints, so short-lived lag is expected. The Kafka browser and CLI provide independent offset inspection. A 120-record paced check observed positive lag for both groups and catch-up to zero after production stopped. Both committed offsets and the broker end offset were 2511 in the independent Kafka CLI check. All 15 dashboard queries returned data, including both lag series.
+Consumer-lag monitoring adds [Kafka Exporter 1.10.0](https://github.com/danielqsj/kafka_exporter/tree/v1.10.0), internal port 9308, with a Kafka 4.0 protocol setting verified against our 4.3.2 broker. Filters restrict collection to `pageviews` and the two demo groups; inactive groups are included because Flink uses explicit assignment. No new host port or application dependency is added. The dashboard shows exporter availability and committed-offset lag separately. Missing or uninitialised offsets are excluded, rather than shown as zero. Lag is independent of the selected Flink job ID, can remain after a job stops and is not window completeness. Raw ingestion commits after archival; Flink commits after checkpoints, so short-lived lag is expected. The Kafka browser and CLI provide independent offset inspection. A 120-record paced check observed positive lag for both groups and catch-up to zero after production stopped. Both committed offsets and the broker end offset were 2511 in the independent Kafka CLI check. All 15 dashboard queries returned data, including both lag series.
 
 Broker JMX metrics, raw-ingester throughput, alerts, log collection and tested recovery monitoring are not included in this increment. Flink UI and logs remain the source of processing error detail. No labels based on users, postcodes or URLs are added. Low traffic still benefits from visibility: a healthy broker can coexist with a failed job or a watermark that never closes its final window.
 
@@ -162,7 +162,7 @@ Production improvements are not implemented or required locally. Measure peaks, 
 
 ## Incident investigation demonstration
 
-The authorised initial increment is an operational archive-limit failure, not a source-code defect or DQ incident. `demos/archive_incident.py capture` starts a separate consumer with a UUID topic/group/output root and two-file limit. Three valid records produce two byte-exact archives, an `ingestion_failed` error, exit code 1 and next committed offset 2. Cleanup removes only this demo's container/topic/group, preserving evidence under `data/incidents/`. Existing ingestion and Flink execution remain running.
+The initial demo covers an operational archive-limit failure, not a source-code defect or DQ incident. `demos/archive_incident.py capture` starts a separate consumer with a UUID topic/group/output root and two-file limit. Three valid records produce two byte-exact archives, an `ingestion_failed` error, exit code 1 and next committed offset 2. Cleanup removes only this demo's container/topic/group, preserving evidence under `data/incidents/`. Existing ingestion and Flink execution remain running.
 
 A loopback-only authenticated service exposes four fixed recorded-evidence tools through Agent Forge's existing incident interface. It has no Docker, arbitrary-path or mutation interface. Synthetic provenance explicitly identifies replayed demo observations. Agent Forge's current planner requires all four discovery requests once; it can form hypotheses and order the checks, but does not have unrestricted tool selection. Its collector records cloud-specific checks as unavailable rather than fabricating resources. Two AI stages produce a plan and evidence-linked assessment; the workflow ends without restart, Slack or Git actions. Prepared workflows save the captured incident as a default trigger preset so the designer and explicit API input use the same context. A UI Run creates a new investigation; CLI retries for an already submitted incident inspect its existing run. A missing/empty UI input override is distinct from a selected default preset. See the [runbook](AGENT_FORGE_DEMO.md).
 
@@ -172,7 +172,7 @@ An enhanced copy adds a classification stage and first-match Condition before th
 
 The local file-monitor adapter now lives in Agent Forge at `scripts/watch_incidents.py`. Capture publishes a checksum-bound ready marker only after isolated cleanup. The adapter polls for newly completed captures, claims workflow/version/incident identity in a separate SQLite file before HTTP, and sends an idempotent authenticated run request. It skips historical files by default, stops after one attempt by default and never automatically retries an uncertain outcome. Evidence tools serve each completed incident from a configured root. This is local demo ingress through the existing manual API, not native platform file-trigger scheduling or general production monitoring.
 
-A later DQ defect demonstration, production incident detection and recovery execution remain separate work. Human approval is required before any fix branch or PR, and the engineer owns commits and pushes.
+A later DQ defect demonstration, production incident detection and recovery execution remain separate work. Any fix branch or pull request needs a separate manual review; commits and pushes stay manual.
 
 ## Technical discussion and references
 

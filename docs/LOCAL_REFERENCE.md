@@ -393,6 +393,6 @@ Archival uses one file per record for clarity and byte preservation. Files accum
 
 This is a single local broker without authentication, TLS or redundancy. Only the host listener is published, on loopback. The input topic retains segments for approximately one day or 256 MiB per partition, subject to segment rolling and cleanup; these settings are not a strict disk cap or the future raw archive's retention policy.
 
-[SPEC.md](../SPEC.md) defines the requirements. [ROADMAP.md](../ROADMAP.md) tracks milestone gates. [ENGINEERING_GUIDE.md](ENGINEERING_GUIDE.md) records design choices and the AI-assisted workflow. [AGENTS.md](../AGENTS.md) contains actionable rules for coding agents.
+[SPEC.md](../SPEC.md) defines the requirements. [ROADMAP.md](../ROADMAP.md) tracks progress and remaining work. [ENGINEERING_GUIDE.md](ENGINEERING_GUIDE.md) records design choices and the AI-assisted workflow. [AGENTS.md](../AGENTS.md) contains actionable rules for coding agents.
 
 Prometheus/Grafana are optional and available through the monitoring profile. An isolated [Agent Forge investigation demo](AGENT_FORGE_DEMO.md) captures a real archive-limit failure and runs read-only analysis; DQ fault injection and recovery actions remain deferred.

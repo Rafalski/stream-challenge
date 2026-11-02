@@ -1,6 +1,6 @@
 # Specification
 
-Baseline agreed on 29 October 2026; Flink implementation authorised on 31 October 2026. Milestones 1 and 2 are reviewed; milestone 3 is implemented and locally verified. A focused milestone 4 increment, concurrent raw ingestion and Flink with end-to-end reporting, was authorised and verified locally on 1 November 2026, awaiting review. This file defines the required outcome. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records choices and open decisions.
+The baseline was set on 29 October 2026, with Flink work starting on 31 October. Milestones 1 and 2 are reviewed; the Flink implementation is locally verified, with review still pending. Concurrent raw ingestion and Flink, including end-to-end reporting, were added and checked on 1 November 2026. This file defines the requirements. [ENGINEERING_GUIDE.md](docs/ENGINEERING_GUIDE.md) records choices and open decisions.
 
 ## Scope
 
@@ -70,14 +70,14 @@ The table maps requirements to components and verification. Milestone verificati
 | R12 | Automate checks with GitHub Actions | CI | Successful run of agreed checks on a clean runner |
 | R13 | Provide run instructions; also document generation, inspection, tests, monitoring status and limitations | README, demo guides and optional results viewer | Follow verified instructions; inspect finished output and postcode/minute filters |
 | R14 | Design for fewer than 100,000 pageviews daily | Design and local setup | Review resources and successful demonstration; no inferred peak-rate guarantee |
-| R15 | Supply source through a publicly accessible GitHub repository and keep it public-safe | Repository; publication by engineer | Content review and engineer verification of public source availability |
-| R16 | Explain design choices; record alternatives, AI workflow and separate production considerations | Engineering guide and agent rules | Engineer review against scope |
+| R15 | Supply source through a publicly accessible GitHub repository and keep it public-safe | Repository; manual publication | Content review and public-access check |
+| R16 | Explain design choices; record alternatives, AI workflow and separate production considerations | Engineering guide and agent rules | Review against scope |
 | R17 | Check aggregate quality and independently reconcile known input/output counts | End-to-end validation | Per-postcode/window and total comparisons, with invalids, late exclusions and replay accounted for |
 | R18 | Provide default-enabled local run-duration, archive-budget and free-space safeguards, with explicit overrides/opt-out and no automatic data deletion | Producer and raw ingester | Focused boundary checks; real Kafka verification that a blocked write does not advance its offset |
 | O1 | Optional monitoring and alerting, using Prometheus/Grafana if selected | Existing integrations and dashboards | Verify available throughput, invalid-event, output, lag, health, error, checkpoint/recovery and agreed alert signals |
-| O2 | Optional Agent Forge incident investigation | Authorised isolated archive-limit failure and read-only evidence adapter; DQ defect remains later work | Real failure capture, immutable investigation/tool history, bounded AI calls, independent archive/offset checks and human review; no recovery actions |
+| O2 | Optional Agent Forge incident investigation | Isolated archive-limit failure and read-only evidence adapter; DQ defect remains later work | Real failure capture, immutable investigation/tool history, bounded AI calls, independent archive/offset checks and human review; no recovery actions |
 
-R1-R18 define the project scope; implementation and review status are tracked in the roadmap. R18 is optional at execution time through an explicit opt-out, enabled by default. O1 and O2 do not block the core demonstration. A lightweight O1 increment is authorised: Flink metrics, Prometheus and a provisioned Grafana dashboard. Consumer lag through an existing Kafka exporter is also authorised. Raw-ingester exporters, alerts and recovery monitoring remain outside this increment. O2 now includes the authorised local archive-limit investigation only; its DQ defect and recovery extensions remain deferred. CI automation is planned and Mermaid diagrams document the design; further security hardening and alerting remain separate work. Confidentiality and secret exclusion always apply.
+R1-R18 define the project scope; implementation and review status are tracked in the roadmap. R18 is optional at execution time through an explicit opt-out, enabled by default. O1 and O2 do not block the core demonstration. The implemented O1 subset includes Flink metrics, Prometheus, a provisioned Grafana dashboard and consumer lag through Kafka Exporter. Raw-ingester exporters, alerts and recovery monitoring remain outside this increment. O2 currently covers the local archive-limit investigation; DQ defect and recovery extensions remain deferred. CI automation is planned and Mermaid diagrams document the design; further security hardening and alerting remain separate work. Confidentiality and secret exclusion always apply.
 
 ## Delivery constraints
 
@@ -89,10 +89,10 @@ The per-record archive is for bounded local demonstrations. Default safety budge
 
 Document in concise British English using Markdown and Mermaid. Keep source data unchanged and use generic terminology. Use synthetic examples and exclude identifying information, private source material and credentials.
 
-The engineer reviews decisions and owns Git history. No agent commits, pushes, PR creation/merging or visibility changes are authorised. Implementation starts only after specification review and authorisation of the next milestone.
+Design decisions and each next stage are reviewed before implementation. Commits, pushes, pull requests and repository visibility changes are handled manually; coding agents do not perform them.
 
 ## Acceptance
 
-Demonstrate generation, Kafka publication, unchanged raw archival, correct postcode/window/count records, separate aggregate files and documented error behaviour. Run the relevant tests and verify the README walkthrough. The engineer handles public publication; its requirement does not authorise agent pushes or repository visibility changes.
+Demonstrate generation, Kafka publication, unchanged raw archival, correct postcode/window/count records, separate aggregate files and documented error behaviour. Run the relevant tests and verify the README walkthrough. Publication is a manual step; coding agents do not push or change repository visibility.
 
 The verified Flink baseline uses DataStream processing, JSONL output with `postcode`, UTC `window_start` and `pageview_count`, five-second disorder tolerance, final-only windows and ten-second checkpoints. A quiet stream can leave its last window open. Versions and runtime evidence are recorded in the engineering guide; broader recovery guarantees and production storage remain deferred.
